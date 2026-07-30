@@ -8,6 +8,7 @@ from app.importers.column_mapper import (
     build_column_mapping,
     find_missing_columns,
 )
+from app.importers.validators import validate_dataframe
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -37,6 +38,11 @@ async def preview_dataset(file: UploadFile = File(...)):
     dataframe = dataframe.rename(columns=column_mapping)
     missing_columns = find_missing_columns(column_mapping)
 
+    issues = []
+
+    if not missing_columns:
+        issues = validate_dataframe(dataframe)
+
     preview = json.loads(dataframe.head(5).to_json(orient="records", date_format="iso"))
 
     return {
@@ -50,6 +56,7 @@ async def preview_dataset(file: UploadFile = File(...)):
         "validation": {
             "is_valid": not missing_columns,
             "missing_columns": missing_columns,
+            "issues": issues,
         },
         "preview": preview,
     }
