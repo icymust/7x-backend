@@ -18,6 +18,8 @@ def test_calculates_shortage():
         "capacity_gap": -3,
         "shortage": 3,
         "surplus": 0,
+        "effective_available_permanent": 8,
+        "effective_available_outsourced": 4,
     }
 
 
@@ -60,3 +62,19 @@ def test_calculates_plan_for_multiple_rows():
     assert len(plan) == 2
     assert plan[0]["shortage"] == 3
     assert plan[1]["surplus"] == 2
+
+
+def test_subtracts_unavailable_couriers():
+    result = calculate_capacity(
+        forecast_shipments=120,
+        available_permanent=8,
+        available_outsourced=4,
+        productivity_per_courier=10,
+        permanent_unavailable=2,
+        outsourced_unavailable=1,
+    )
+
+    assert result["effective_available_permanent"] == 6
+    assert result["effective_available_outsourced"] == 3
+    assert result["available_couriers"] == 9
+    assert result["shortage"] == 6

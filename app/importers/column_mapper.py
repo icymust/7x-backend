@@ -22,6 +22,12 @@ COLUMN_ALIASES = {
     "outsourced_couriers": "available_outsourced",
     "productivity": "productivity_per_courier",
     "shipments_per_courier": "productivity_per_courier",
+    "permanent_on_leave": "permanent_unavailable",
+    "permanent_leave": "permanent_unavailable",
+    "unavailable_permanent": "permanent_unavailable",
+    "outsourced_on_leave": "outsourced_unavailable",
+    "outsourced_leave": "outsourced_unavailable",
+    "unavailable_outsourced": "outsourced_unavailable",
 }
 
 

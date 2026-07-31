@@ -62,3 +62,16 @@ def test_detects_duplicate_store_time():
         "code": "duplicate_store_time",
         "rows": [2, 3],
     } in issues
+
+
+def test_detects_unavailable_exceeds_available():
+    dataframe = create_valid_dataframe()
+    dataframe["permanent_unavailable"] = [9, 0]
+
+    issues = validate_dataframe(dataframe)
+
+    assert {
+        "code": "unavailable_exceeds_available",
+        "column": "permanent_unavailable",
+        "rows": [2],
+    } in issues

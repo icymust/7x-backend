@@ -4,6 +4,8 @@ NON_NEGATIVE_COLUMNS = [
     "forecast_shipments",
     "available_permanent",
     "available_outsourced",
+    "permanent_unavailable",
+    "outsourced_unavailable",
 ]
 
 
@@ -42,6 +44,9 @@ def validate_dataframe(dataframe: pd.DataFrame) -> list[dict]:
         )
 
     for column in NON_NEGATIVE_COLUMNS:
+        if column not in dataframe.columns:
+            continue
+
         values = pd.to_numeric(dataframe[column], errors="coerce")
 
         invalid_numbers = values.isna()
@@ -89,5 +94,35 @@ def validate_dataframe(dataframe: pd.DataFrame) -> list[dict]:
                 "rows": _excel_rows(duplicates),
             }
         )
+
+    unavailable_pairs = [
+        ("permanent_unavailable", "available_permanent"),
+        ("outsourced_unavailable", "available_outsourced"),
+    ]
+
+    for unavailable_column, available_column in unavailable_pairs:
+        if unavailable_column not in dataframe.columns:
+            continue
+
+        unavailable = pd.to_numeric(
+            dataframe[unavailable_column],
+            errors="coerce",
+        )
+
+        available = pd.to_numeric(
+            dataframe[available_column],
+            errors="coerce",
+        )
+
+        exceeds_available = unavailable > available
+
+        if exceeds_available.any():
+            issues.append(
+                {
+                    "code": "unavailable_exceeds_available",
+                    "column": unavailable_column,
+                    "rows": _excel_rows(exceeds_available),
+                }
+            )
 
     return issues

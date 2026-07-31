@@ -28,4 +28,4 @@ def test_calculates_plan_from_excel():
 
     assert result["row_count"] == 4
     assert result["plan"][0]["required_couriers"] == 120
-    assert result["plan"][0]["shortage"] == 108
+    assert result["plan"][0]["shortage"] == 111
