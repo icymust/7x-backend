@@ -55,4 +55,11 @@ Backend является источником точных значений: к�
   - сроки начала permanent hiring и заказа outsourced;
   - переход на outsourced, если срок permanent hiring уже пропущен;
   - priority и машиночитаемая причина рекомендации.
-- Автоматические тесты pytest: 17 тестов проходят.
+- Daily Summary Engine для календаря:
+  - группировка подробного planning plan по дням;
+  - daily coverage, required и available courier slots;
+  - daily shortage, surplus и количество затронутых магазинов;
+  - количество рекомендаций за день;
+  - смысловой статус `normal`, `warning`, `high`, `critical` или `surplus`.
+- Поле `calendar` в ответе `POST /api/planning/calculate` для frontend.
+- Автоматические тесты pytest: 19 тестов проходят.

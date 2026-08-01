@@ -5,6 +5,7 @@ import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.engines.capacity import calculate_capacity_plan
+from app.engines.daily_summary import build_daily_summaries
 from app.engines.recommendations import build_recommendation
 from app.importers.column_mapper import (
     build_column_mapping,
@@ -81,10 +82,13 @@ async def calculate_plan(
             planning_date=used_planning_date,
         )
 
+    calendar = build_daily_summaries(plan)
+
     return {
         "filename": file.filename,
         "target_utilization": target_utilization,
         "row_count": len(plan),
         "plan": plan,
         "planning_date": used_planning_date.isoformat(),
+        "calendar": calendar,
     }

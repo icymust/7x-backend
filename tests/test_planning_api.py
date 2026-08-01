@@ -35,3 +35,9 @@ def test_calculates_plan_from_excel():
     assert recommendation["add_permanent"] == 0
     assert recommendation["add_outsourced"] == 111
     assert recommendation["priority"] == "critical"
+
+    calendar = result["calendar"]
+    assert len(calendar) == 4
+    assert calendar[0]["date"] == "2026-08-01"
+    assert calendar[0]["severity"] == "critical"
+    assert calendar[0]["shortage_courier_slots"] == 111
