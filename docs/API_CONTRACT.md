@@ -1,186 +1,111 @@
-# Backend API contract for frontend
+# API contract для frontend
 
-Base URL для локальной разработки: `http://127.0.0.1:8000`.
+Локальный backend: `http://127.0.0.1:8000`
 
-Авторизация для hackathon MVP отсутствует. Все Planning Runs общие. Даты и
-время передаются в ISO 8601. Границы `date_from` и `date_to` включаются в
-результат.
+Swagger: `http://127.0.0.1:8000/docs`
 
-## Рекомендуемый flow frontend
+Авторизации нет. Все расчёты общие. Даты передаются как `YYYY-MM-DD`, время —
+в ISO 8601. `date_from` и `date_to` включаются в выбранный период.
+
+## Основной flow
 
 1. При открытии dashboard вызвать
    `GET /api/planning-runs?limit=1&offset=0`.
-2. Если `items` пустой, показать форму загрузки Excel.
-3. Если есть запись, получить полный результат через
-   `GET /api/planning-runs/{planning_run_id}`.
-4. После новой загрузки использовать результат
-   `POST /api/planning/calculate` без дополнительного GET-запроса.
-5. Для календарного экрана использовать отдельные calendar и recommendations
-   endpoints с одинаковыми фильтрами периода и магазина.
+2. Если `items` пустой — показать загрузку Excel.
+3. Если расчёт есть — взять его `planning_run_id` и вызвать
+   `GET /api/planning-runs/{id}`.
+4. После загрузки нового Excel вызвать `POST /api/planning/calculate` и сразу
+   показать данные из ответа.
+5. Для календаря и рекомендаций использовать отдельные endpoints с фильтрами.
 
-## POST /api/planning/calculate
+## 1. Preview Excel
 
-Принимает `.xlsx` как `multipart/form-data` в поле `file`.
+`POST /api/datasets/preview`
 
-Query parameters:
+- Request: `.xlsx` в multipart-поле `file`.
+- Response: листы, колонки, column mapping, validation issues и первые пять
+  строк.
+- Файл не сохраняется и расчёт не запускается.
 
-- `target_utilization`: число больше `0` и не больше `1`, default `0.85`;
-- `planning_date`: опциональная дата `YYYY-MM-DD`.
+## 2. Рассчитать и сохранить
 
-Успешный ответ содержит:
+`POST /api/planning/calculate`
 
-- `filename`;
-- `target_utilization`;
-- `planning_date`;
-- `row_count`;
-- `plan`: подробные capacity rows с `recommendation`;
-- `calendar`: агрегированные daily summaries;
-- `dataset_id`;
-- `planning_run_id`.
+- Request: `.xlsx` в multipart-поле `file`.
+- Query: `target_utilization` — default `0.85`.
+- Query: `planning_date` — опциональная дата.
+- Response: `plan`, `calendar`, `dataset_id`, `planning_run_id`, filename,
+  planning date и row count.
 
-Backend сохраняет Dataset и Planning Run до возврата успешного ответа.
-Одинаковый файл повторно использует существующий Dataset по SHA-256 checksum,
-но каждый расчёт создаёт новый Planning Run.
+Backend сначала валидирует Excel, рассчитывает capacity и recommendations,
+сохраняет результат в PostgreSQL и только после этого отвечает frontend.
 
-## GET /api/planning-runs
+Повторная загрузка одинакового файла использует существующий Dataset, но
+создаёт новый Planning Run.
 
-Возвращает историю расчётов от новых к старым.
+## 3. Список расчётов
 
-Query parameters:
+`GET /api/planning-runs?limit=20&offset=0`
 
-- `limit`: от `1` до `100`, default `20`;
-- `offset`: от `0`, default `0`.
+- `limit`: от `1` до `100`.
+- `offset`: от `0`.
+- Response: `total`, `limit`, `offset`, `items`.
+- `items` отсортированы от нового расчёта к старому.
 
-Форма ответа:
+Каждый item содержит IDs, filename, planning date, created time, utilization,
+model version и row count. `total` — количество всех сохранённых расчётов.
 
-```json
-{
-  "total": 35,
-  "limit": 20,
-  "offset": 0,
-  "items": [
-    {
-      "planning_run_id": 35,
-      "dataset_id": 8,
-      "filename": "capacity_august.xlsx",
-      "planning_date": "2026-08-01",
-      "created_at": "2026-08-01T20:00:00+00:00",
-      "target_utilization": 0.85,
-      "model_version": "baseline-v1",
-      "row_count": 120
-    }
-  ]
-}
-```
+## 4. Полный сохранённый расчёт
 
-`total` — количество всех Planning Runs, а не только элементов текущей
-страницы.
+`GET /api/planning-runs/{planning_run_id}`
 
-## GET /api/planning-runs/{planning_run_id}
+Возвращает полный `plan`, `calendar`, metadata и IDs. Используется для
+восстановления dashboard без повторной загрузки Excel.
 
-Возвращает полный сохранённый результат: `plan`, `calendar`, metadata и IDs.
-Используется для восстановления dashboard без повторной загрузки Excel.
+## 5. Календарь
 
-Неизвестный ID возвращает `404` с `Planning run not found`.
+`GET /api/planning-runs/{planning_run_id}/calendar`
 
-## GET /api/planning-runs/{planning_run_id}/calendar
+Опциональные query parameters:
 
-Query parameters:
+- `date_from`;
+- `date_to`;
+- `store_id`.
 
-- `date_from`: опциональная дата `YYYY-MM-DD`;
-- `date_to`: опциональная дата `YYYY-MM-DD`;
-- `store_id`: опциональный ID магазина.
+Response содержит `calendar`, `row_count`, выбранные фильтры и IDs. Каждый день
+содержит severity, coverage, required/available, shortage/surplus, affected
+stores и recommendations count.
 
-Форма ответа:
+Backend возвращает смысловой severity. Цвет для него выбирает frontend.
 
-```json
-{
-  "planning_run_id": 5,
-  "dataset_id": 1,
-  "store_id": "DXB-001",
-  "date_from": "2026-08-01",
-  "date_to": "2026-08-31",
-  "row_count": 2,
-  "calendar": []
-}
-```
+## 6. Рекомендации
 
-Каждый calendar item содержит `date`, `severity`, `coverage_percent`, required,
-available, shortage и surplus courier slots, affected stores и recommendations
-count. Backend возвращает смысловой `severity`; конкретный цвет выбирает
-frontend.
-
-## GET /api/planning-runs/{planning_run_id}/recommendations
+`GET /api/planning-runs/{planning_run_id}/recommendations`
 
 Использует те же `date_from`, `date_to` и `store_id`.
 
-Форма ответа:
+Response содержит capacity context и recommendation для каждой подходящей
+строки: permanent/outsourced counts, deadlines, priority и reason.
 
-```json
-{
-  "planning_run_id": 5,
-  "dataset_id": 1,
-  "store_id": "DXB-001",
-  "date_from": null,
-  "date_to": null,
-  "row_count": 2,
-  "recommendations": []
-}
-```
+## 7. Сравнение расчётов
 
-Каждый item содержит магазин, time bucket, required/available couriers,
-shortage/surplus и структурированную recommendation: permanent/outsourced
-counts, deadlines, priority и reason.
+`GET /api/planning-runs/{current_id}/compare?baseline_id={old_id}`
 
-## GET /api/planning-runs/{planning_run_id}/compare
+- `baseline_id` — старый расчёт.
+- `current_id` — новый расчёт.
+- Response: `baseline`, `current`, `delta`.
+- Формула: `delta = current - baseline`.
 
-Query parameter `baseline_id` указывает ID старого Planning Run. Path parameter
-указывает текущий Planning Run.
+Отрицательная `shortage_courier_slots` в delta означает, что дефицит уменьшился.
 
-Ответ содержит capacity totals для `baseline` и `current`, а также `delta`,
-рассчитанную как `current - baseline`:
+## Служебные endpoints
 
-```json
-{
-  "baseline": {
-    "planning_run_id": 3,
-    "dataset_id": 1,
-    "filename": "baseline.xlsx",
-    "row_count": 4,
-    "required_courier_slots": 417,
-    "available_courier_slots": 43,
-    "shortage_courier_slots": 374,
-    "surplus_courier_slots": 0
-  },
-  "current": {
-    "planning_run_id": 5,
-    "dataset_id": 2,
-    "filename": "current.xlsx",
-    "row_count": 4,
-    "required_courier_slots": 400,
-    "available_courier_slots": 50,
-    "shortage_courier_slots": 350,
-    "surplus_courier_slots": 0
-  },
-  "delta": {
-    "row_count": 0,
-    "required_courier_slots": -17,
-    "available_courier_slots": 7,
-    "shortage_courier_slots": -24,
-    "surplus_courier_slots": 0
-  }
-}
-```
-
-Отрицательный `shortage_courier_slots` в `delta` означает уменьшение дефицита.
-Сравнение одинаковых расчётов корректно возвращает нулевую delta.
+- `GET /health` — FastAPI работает.
+- `GET /health/database` — PostgreSQL доступен.
 
 ## Ошибки
 
-- `400`: файл не `.xlsx` или Excel невозможно прочитать;
-- `404`: Planning Run не найден;
-- `422`: validation error или `date_from` позже `date_to`;
-- `503`: PostgreSQL недоступен для `/health/database`.
-
-Swagger доступен по `/docs` и используется как интерактивная документация
-актуального backend API.
+- `400` — неверный формат или Excel невозможно прочитать.
+- `404` — Planning Run не найден.
+- `422` — validation error или неправильный диапазон дат.
+- `503` — PostgreSQL недоступен в database health check.
