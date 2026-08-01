@@ -108,6 +108,18 @@ hiring start required и staff surplus. Каждый alert содержит seve
 
 Отрицательная `shortage_courier_slots` в delta означает, что дефицит уменьшился.
 
+## 9. AI-объяснение
+
+`POST /api/assistant/explain`
+
+Request JSON: `planning_run_id`, опциональные `date_from`, `date_to`,
+`store_id` и `language` (`en` или `ru`).
+
+Response содержит `source`, `message` и компактный `context` с capacity,
+daily summary, recommendations и notifications. Пока Ollama не подключена,
+backend возвращает `source: structured_fallback` и `message: null`.
+Числа и кадровые решения формирует backend, а не LLM.
+
 ## Служебные endpoints
 
 - `GET /health` — FastAPI работает.

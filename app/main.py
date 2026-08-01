@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.api.assistant import router as assistant_router
 from app.api.datasets import router as datasets_router
 from app.api.planning import router as planning_router
 from app.api.planning_runs import router as planning_runs_router
@@ -33,6 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(assistant_router)
 app.include_router(datasets_router)
 app.include_router(planning_router)
 app.include_router(planning_runs_router)

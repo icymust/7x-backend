@@ -85,7 +85,7 @@ alembic upgrade head
                             v
                     Planning Result
        capacity + optimization + recommendations
-                     + daily summary
+              + daily summary + notifications
                             |
               ┌─────────────┴─────────────┐
               |                           |
@@ -109,8 +109,9 @@ Backend является источником точных значений: к�
 использует `productivity_per_courier` из Excel как baseline. После получения
 исторических данных ML будет предсказывать это значение. Explanation Context
 Builder собирает для выбранного дня или периода capacity, optimization,
-recommendations и daily summary. Опциональный Ollama LLM может только превратить
-этот готовый контекст в понятный человеку текст и не участвует в расчётах.
+recommendations, daily summary и notifications. Опциональный Ollama LLM
+может только превратить этот готовый контекст в понятный человеку текст и не
+участвует в расчётах.
 
 ## Основной flow
 
@@ -126,7 +127,8 @@ recommendations и daily summary. Опциональный Ollama LLM может
 6. Recommendation Engine формирует количество, deadline, priority и reason.
 7. Daily Summary группирует результат по дням для календаря.
 8. Explanation Context Builder собирает компактный контекст выбранного дня или
-   периода из capacity, optimization, recommendations и daily summary.
+   периода из capacity, optimization, recommendations, daily summary и
+   notifications.
 9. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
    недоступности LLM возвращается структурированный fallback.
 10. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
@@ -174,7 +176,11 @@ recommendations и daily summary. Опциональный Ollama LLM может
 - Comparison Engine и endpoint сравнения двух Planning Runs по capacity totals.
 - Notification Engine и API для urgent shortage, upcoming shortage, hiring
   deadline и staff surplus alerts.
+- Explanation Context Builder для компактной передачи готовых
+  расчётов в LLM.
+- Endpoint `POST /api/assistant/explain` с structured fallback до
+  подключения Ollama.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
 - Frontend response contract в `docs/API_CONTRACT.md`.
-- Автоматические тесты pytest: 48 тестов проходят.
+- Автоматические тесты pytest: 52 теста проходят.

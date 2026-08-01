@@ -6,8 +6,8 @@ METRIC_FIELDS = {
 }
 
 
-def summarize_plan(plan: list[dict]) -> dict[str, int]:
-    summary = {
+def summarize_plan(plan: list[dict]) -> dict[str, int | float]:
+    summary: dict[str, int | float] = {
         "row_count": len(plan),
     }
 
