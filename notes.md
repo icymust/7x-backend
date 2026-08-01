@@ -11,28 +11,73 @@ uvicorn app.main:app --reload
 ## Архитектура системы
 
 ```text
-Excel demand forecast ──────────┐
-Leave и workforce data ─────────┤
-Календарь UAE ──────────────────┤
-Исторические данные → ML ───────┤
-                                ↓
-                      Backend calculations
-                      + Capacity Engine
-                      + Recommendation Engine
-                      + OR-Tools optimizer
-                                |
-                 ┌──────────────┴──────────────┐
-                 ↓                             ↓
-              Frontend                 Опциональный LLM
-       структурированные данные       понятные объяснения
-                 |
-                 ↓
-       Календарь: месяц, день или период
+                    Excel от 7X
+        demand forecast + workforce + leave
+                            |
+                            v
+              Import → Mapping → Validation
+                            |
+                            v
+               Канонические данные backend
+                            |
+              ┌─────────────┴─────────────┐
+              |                           |
+              v                           v
+   Исторические actual data       Demand и workforce data
+              |                           |
+              v                           |
+   ML Productivity Estimator              |
+   deliveries per courier                 |
+              |                           |
+              └─────────────┬─────────────┘
+                            v
+                     Capacity Engine
+           required / available / shortage / surplus
+                            |
+                            v
+                  OR-Tools optimizer
+              permanent / outsourced / cost
+                            |
+                            v
+                Recommendation Engine
+          count / deadline / priority / reason
+                            |
+              ┌─────────────┴─────────────┐
+              |                           |
+              v                           v
+     Daily Summary + Calendar       Опциональный Ollama LLM
+     month / day / date range       только объясняет результат
+              |                           |
+              └─────────────┬─────────────┘
+                            v
+                       FastAPI API
+                            |
+                            v
+                         Frontend
 ```
 
 Backend является источником точных значений: количества курьеров, сроков,
-приоритетов и кодов причин. Опциональный LLM может только преобразовать готовую
-структурированную рекомендацию в понятный человеку текст.
+приоритетов и кодов причин. Пока ML-модель не подключена, Capacity Engine
+использует `productivity_per_courier` из Excel как baseline. После получения
+исторических данных ML будет предсказывать это значение. Опциональный Ollama
+LLM может только преобразовать готовую структурированную рекомендацию в понятный
+человеку текст и не участвует в расчётах.
+
+## Основной flow
+
+1. Пользователь загружает Excel с forecast, workforce и leave.
+2. Backend читает файл, сопоставляет колонки и валидирует значения.
+3. Productivity берётся из Excel или предсказывается ML-моделью при наличии
+   обученной модели и подходящих исторических данных.
+4. Capacity Engine рассчитывает required, effective available, shortage и
+   surplus по каждому store/time bucket.
+5. OR-Tools подбирает permanent/outsourced mix с учётом сроков, стоимости и
+   ограничений. До его подключения используется rule-based mix 60/40.
+6. Recommendation Engine формирует количество, deadline, priority и reason.
+7. Daily Summary группирует результат по дням для календаря.
+8. Ollama опционально превращает готовую рекомендацию в понятное HR-объяснение;
+   при недоступности LLM возвращается структурированный fallback.
+9. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
 
 ## Что уже сделано в backend
 
