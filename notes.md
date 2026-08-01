@@ -166,4 +166,10 @@ recommendations и daily summary. Опциональный Ollama LLM может
 - Сохранение каждого нового расчёта как отдельного Planning Run.
 - Поля `dataset_id` и `planning_run_id` в ответе
   `POST /api/planning/calculate`.
-- Автоматические тесты pytest: 24 теста проходят.
+- API чтения сохранённых результатов:
+  - список Planning Runs с `total`, `limit` и `offset`;
+  - полный Planning Run по ID;
+  - отдельные calendar и recommendations endpoints;
+  - фильтры `date_from`, `date_to` и `store_id`.
+- Frontend response contract в `docs/API_CONTRACT.md`.
+- Автоматические тесты pytest: 36 тестов проходят.
