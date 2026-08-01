@@ -87,7 +87,17 @@ Backend возвращает смысловой severity. Цвет для нег
 Response содержит capacity context и recommendation для каждой подходящей
 строки: permanent/outsourced counts, deadlines, priority и reason.
 
-## 7. Сравнение расчётов
+## 7. Уведомления
+
+`GET /api/planning-runs/{planning_run_id}/notifications`
+
+Использует те же `date_from`, `date_to` и `store_id`.
+
+Response содержит dashboard alerts: urgent staff shortage, upcoming shortage,
+hiring start required и staff surplus. Каждый alert содержит severity, магазин,
+дату, shortage/surplus, hiring counts, reason и action deadline.
+
+## 8. Сравнение расчётов
 
 `GET /api/planning-runs/{current_id}/compare?baseline_id={old_id}`
 

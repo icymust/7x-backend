@@ -554,3 +554,100 @@ def test_compare_returns_404_for_unknown_current_run():
     assert response.json() == {
         "detail": "Current planning run not found",
     }
+
+
+def test_gets_filtered_notifications():
+    plan = [
+        {
+            "store_id": "DXB-001",
+            "time_bucket": "2026-08-01T09:00:00",
+            "shortage": 5,
+            "surplus": 0,
+            "recommendation": {
+                "priority": "critical",
+                "reason": "emergency_outsourcing_required",
+                "add_permanent": 0,
+                "add_outsourced": 5,
+                "outsourced_start_by": "2026-07-22",
+            },
+        },
+        {
+            "store_id": "DXB-002",
+            "time_bucket": "2026-08-01T09:00:00",
+            "shortage": 3,
+            "surplus": 0,
+            "recommendation": {
+                "priority": "high",
+                "reason": "permanent_lead_time_missed",
+                "add_permanent": 0,
+                "add_outsourced": 3,
+                "outsourced_start_by": "2026-07-22",
+            },
+        },
+    ]
+
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={"plan": plan},
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/notifications"
+            "?store_id=DXB-001"
+            "&date_from=2026-08-01"
+            "&date_to=2026-08-01"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    assert result["store_id"] == "DXB-001"
+    assert result["date_from"] == "2026-08-01"
+    assert result["date_to"] == "2026-08-01"
+    assert result["row_count"] == 2
+
+    notification_types = {
+        notification["type"] for notification in result["notifications"]
+    }
+
+    assert notification_types == {
+        "urgent_staff_shortage",
+        "hiring_start_required",
+    }
+
+
+def test_notifications_return_404_for_unknown_run():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get("/api/planning-runs/999/notifications")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Planning run not found",
+    }
+
+
+def test_rejects_invalid_notifications_date_range():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/notifications?date_from=2026-09-01&date_to=2026-08-01"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "date_from cannot be later than date_to",
+    }
