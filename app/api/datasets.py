@@ -54,7 +54,7 @@ async def preview_dataset(file: UploadFile = File(...)):
         "columns": dataframe.columns.tolist(),
         "row_count": len(dataframe),
         "validation": {
-            "is_valid": not missing_columns,
+            "is_valid": not missing_columns and not issues,
             "missing_columns": missing_columns,
             "issues": issues,
         },

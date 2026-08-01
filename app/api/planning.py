@@ -69,7 +69,7 @@ async def calculate_plan(
             status_code=422,
             detail={
                 "missing_columns": missing_columns,
-                "issues": [],
+                "issues": issues,
             },
         )
 

@@ -172,5 +172,7 @@ recommendations и daily summary. Опциональный Ollama LLM может
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
 - Comparison Engine и endpoint сравнения двух Planning Runs по capacity totals.
+- Понятные validation issues в preview и calculate API.
+- Настраиваемый CORS для разрешённых frontend origins.
 - Frontend response contract в `docs/API_CONTRACT.md`.
-- Автоматические тесты pytest: 40 тестов проходят.
+- Автоматические тесты pytest: 44 теста проходят.
