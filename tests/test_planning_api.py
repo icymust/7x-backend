@@ -12,7 +12,7 @@ SAMPLE_FILE = Path(__file__).parent.parent / "sample_data" / "sample_dataset.xls
 def test_calculates_plan_from_excel():
     with SAMPLE_FILE.open("rb") as dataset:
         response = client.post(
-            "/api/planning/calculate",
+            "/api/planning/calculate?planning_date=2026-08-01",
             files={
                 "file": (
                     "sample_dataset.xlsx",
@@ -29,3 +29,9 @@ def test_calculates_plan_from_excel():
     assert result["row_count"] == 4
     assert result["plan"][0]["required_couriers"] == 120
     assert result["plan"][0]["shortage"] == 111
+
+    recommendation = result["plan"][0]["recommendation"]
+
+    assert recommendation["add_permanent"] == 0
+    assert recommendation["add_outsourced"] == 111
+    assert recommendation["priority"] == "critical"

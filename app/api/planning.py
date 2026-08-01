@@ -1,9 +1,11 @@
+from datetime import date
 from io import BytesIO
 
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.engines.capacity import calculate_capacity_plan
+from app.engines.recommendations import build_recommendation
 from app.importers.column_mapper import (
     build_column_mapping,
     find_missing_columns,
@@ -17,6 +19,7 @@ router = APIRouter(prefix="/api/planning", tags=["planning"])
 async def calculate_plan(
     file: UploadFile = File(...),
     target_utilization: float = Query(0.85, gt=0, le=1),
+    planning_date: date | None = Query(None),
 ):
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(
@@ -67,9 +70,21 @@ async def calculate_plan(
     rows = dataframe.to_dict(orient="records")
     plan = calculate_capacity_plan(rows, target_utilization)
 
+    used_planning_date = planning_date or date.today()
+
+    for plan_row in plan:
+        plan_row["recommendation"] = build_recommendation(
+            required_couriers=plan_row["required_couriers"],
+            effective_permanent=plan_row["effective_available_permanent"],
+            effective_outsourced=plan_row["effective_available_outsourced"],
+            demand_date=plan_row["time_bucket"],
+            planning_date=used_planning_date,
+        )
+
     return {
         "filename": file.filename,
         "target_utilization": target_utilization,
         "row_count": len(plan),
         "plan": plan,
+        "planning_date": used_planning_date.isoformat(),
     }
