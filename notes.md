@@ -35,18 +35,31 @@ uvicorn app.main:app --reload
            required / available / shortage / surplus
                             |
                             v
-                  OR-Tools optimizer
+          Workforce Optimization Engine
+              powered by Google OR-Tools
               permanent / outsourced / cost
                             |
                             v
                 Recommendation Engine
           count / deadline / priority / reason
                             |
+                            v
+              Daily Summary + Calendar
+              month / day / date range
+                            |
+                            v
+                    Planning Result
+       capacity + optimization + recommendations
+                     + daily summary
+                            |
               ┌─────────────┴─────────────┐
               |                           |
               v                           v
-     Daily Summary + Calendar       Опциональный Ollama LLM
-     month / day / date range       только объясняет результат
+      Структурированные данные   Explanation Context Builder
+                                          |
+                                          v
+                                 Опциональный Ollama LLM
+                                 только объясняет результат
               |                           |
               └─────────────┬─────────────┘
                             v
@@ -59,9 +72,10 @@ uvicorn app.main:app --reload
 Backend является источником точных значений: количества курьеров, сроков,
 приоритетов и кодов причин. Пока ML-модель не подключена, Capacity Engine
 использует `productivity_per_courier` из Excel как baseline. После получения
-исторических данных ML будет предсказывать это значение. Опциональный Ollama
-LLM может только преобразовать готовую структурированную рекомендацию в понятный
-человеку текст и не участвует в расчётах.
+исторических данных ML будет предсказывать это значение. Explanation Context
+Builder собирает для выбранного дня или периода capacity, optimization,
+recommendations и daily summary. Опциональный Ollama LLM может только превратить
+этот готовый контекст в понятный человеку текст и не участвует в расчётах.
 
 ## Основной flow
 
@@ -71,13 +85,16 @@ LLM может только преобразовать готовую струк
    обученной модели и подходящих исторических данных.
 4. Capacity Engine рассчитывает required, effective available, shortage и
    surplus по каждому store/time bucket.
-5. OR-Tools подбирает permanent/outsourced mix с учётом сроков, стоимости и
-   ограничений. До его подключения используется rule-based mix 60/40.
+5. Workforce Optimization Engine, powered by Google OR-Tools, подбирает
+   permanent/outsourced mix с учётом сроков, стоимости и ограничений. До его
+   подключения используется rule-based mix 60/40.
 6. Recommendation Engine формирует количество, deadline, priority и reason.
 7. Daily Summary группирует результат по дням для календаря.
-8. Ollama опционально превращает готовую рекомендацию в понятное HR-объяснение;
-   при недоступности LLM возвращается структурированный fallback.
-9. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
+8. Explanation Context Builder собирает компактный контекст выбранного дня или
+   периода из capacity, optimization, recommendations и daily summary.
+9. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
+   недоступности LLM возвращается структурированный fallback.
+10. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
 
 ## Что уже сделано в backend
 
