@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -9,7 +10,18 @@ client = TestClient(app)
 SAMPLE_FILE = Path(__file__).parent.parent / "sample_data" / "sample_dataset.xlsx"
 
 
-def test_calculates_plan_from_excel():
+def test_calculates_plan_from_excel(monkeypatch):
+
+    def fake_save_planning_result(*args, **kwargs):
+        dataset = SimpleNamespace(id=10)
+        planning_run = SimpleNamespace(id=20)
+        return dataset, planning_run
+
+    monkeypatch.setattr(
+        "app.api.planning.save_planning_result",
+        fake_save_planning_result,
+    )
+
     with SAMPLE_FILE.open("rb") as dataset:
         response = client.post(
             "/api/planning/calculate?planning_date=2026-08-01",
@@ -41,3 +53,5 @@ def test_calculates_plan_from_excel():
     assert calendar[0]["date"] == "2026-08-01"
     assert calendar[0]["severity"] == "critical"
     assert calendar[0]["shortage_courier_slots"] == 111
+    assert result["dataset_id"] == 10
+    assert result["planning_run_id"] == 20

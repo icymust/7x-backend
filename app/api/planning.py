@@ -1,9 +1,12 @@
+import json
 from datetime import date
 from io import BytesIO
 
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy.orm import Session
 
+from app.database import get_db
 from app.engines.capacity import calculate_capacity_plan
 from app.engines.daily_summary import build_daily_summaries
 from app.engines.recommendations import build_recommendation
@@ -12,6 +15,7 @@ from app.importers.column_mapper import (
     find_missing_columns,
 )
 from app.importers.validators import validate_dataframe
+from app.services.planning_storage import save_planning_result
 
 router = APIRouter(prefix="/api/planning", tags=["planning"])
 
@@ -21,6 +25,7 @@ async def calculate_plan(
     file: UploadFile = File(...),
     target_utilization: float = Query(0.85, gt=0, le=1),
     planning_date: date | None = Query(None),
+    db: Session = Depends(get_db),
 ):
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(
@@ -84,11 +89,34 @@ async def calculate_plan(
 
     calendar = build_daily_summaries(plan)
 
-    return {
+    result = {
         "filename": file.filename,
         "target_utilization": target_utilization,
         "row_count": len(plan),
         "plan": plan,
         "planning_date": used_planning_date.isoformat(),
         "calendar": calendar,
+    }
+
+    normalized_data = json.loads(
+        dataframe.to_json(
+            orient="records",
+            date_format="iso",
+        )
+    )
+
+    dataset, planning_run = save_planning_result(
+        db,
+        filename=file.filename,
+        file_content=content,
+        normalized_data=normalized_data,
+        planning_date=used_planning_date,
+        target_utilization=target_utilization,
+        result=result,
+    )
+
+    return {
+        **result,
+        "dataset_id": dataset.id,
+        "planning_run_id": planning_run.id,
     }

@@ -3,9 +3,44 @@
 ## Полезные команды
 
 ```bash
+# Активировать виртуальное окружение Python
 source .venv/bin/activate
-pytest
+
+# Запустить backend в режиме разработки
 uvicorn app.main:app --reload
+
+# Запустить все тесты
+pytest
+
+# Запустить Docker на macOS
+colima start
+
+# Запустить PostgreSQL проекта
+docker compose up -d
+
+# Проверить состояние контейнера
+docker compose ps
+
+# Посмотреть логи PostgreSQL
+docker compose logs postgres
+
+# Проверить готовность PostgreSQL
+docker compose exec postgres pg_isready -U sevenx -d sevenx
+
+# Открыть консоль PostgreSQL
+docker compose exec postgres psql -U sevenx -d sevenx
+
+# Остановить контейнеры проекта без удаления данных
+docker compose stop
+
+# Показать текущую версию миграции
+alembic current
+
+# Сгенерировать миграцию после изменения models
+alembic revision --autogenerate -m "migration description"
+
+# Применить все новые миграции
+alembic upgrade head
 ```
 
 ## Архитектура системы
@@ -124,4 +159,11 @@ recommendations и daily summary. Опциональный Ollama LLM может
   - количество рекомендаций за день;
   - смысловой статус `normal`, `warning`, `high`, `critical` или `surplus`.
 - Поле `calendar` в ответе `POST /api/planning/calculate` для frontend.
-- Автоматические тесты pytest: 19 тестов проходят.
+- PostgreSQL в Docker Compose с отдельным persistent volume.
+- SQLAlchemy engine, sessions и проверка подключения `/health/database`.
+- Alembic и две миграции для таблиц `datasets` и `planning_runs`.
+- Сохранение нормализованного Dataset с SHA-256 checksum без дубликатов.
+- Сохранение каждого нового расчёта как отдельного Planning Run.
+- Поля `dataset_id` и `planning_run_id` в ответе
+  `POST /api/planning/calculate`.
+- Автоматические тесты pytest: 24 теста проходят.

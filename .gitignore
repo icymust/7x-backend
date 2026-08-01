@@ -9,3 +9,5 @@ uploads/
 *.db
 .coverage
 htmlcov/
+
+roadmap.md
