@@ -23,12 +23,17 @@ class FakeDatabase:
         planning_run=None,
         planning_runs=None,
         total=0,
+        planning_runs_by_id=None,
     ):
         self.planning_run = planning_run
         self.planning_runs = planning_runs or []
         self.total = total
+        self.planning_runs_by_id = planning_runs_by_id
 
     def get(self, model, planning_run_id):
+        if self.planning_runs_by_id is not None:
+            return self.planning_runs_by_id.get(planning_run_id)
+
         if planning_run_id == 5:
             return self.planning_run
 
@@ -450,3 +455,102 @@ def test_filters_calendar_by_store():
     assert result["calendar"][0]["required_courier_slots"] == 10
     assert result["calendar"][0]["available_courier_slots"] == 8
     assert result["calendar"][0]["affected_stores"] == 1
+
+
+def test_compares_two_planning_runs():
+    baseline_run = SimpleNamespace(
+        id=3,
+        dataset_id=1,
+        result={
+            "filename": "baseline.xlsx",
+            "plan": [
+                {
+                    "required_couriers": 10,
+                    "available_couriers": 8,
+                    "shortage": 2,
+                    "surplus": 0,
+                }
+            ],
+        },
+    )
+
+    current_run = SimpleNamespace(
+        id=5,
+        dataset_id=2,
+        result={
+            "filename": "current.xlsx",
+            "plan": [
+                {
+                    "required_couriers": 10,
+                    "available_couriers": 10,
+                    "shortage": 0,
+                    "surplus": 0,
+                }
+            ],
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(
+        planning_runs_by_id={
+            3: baseline_run,
+            5: current_run,
+        }
+    )
+
+    try:
+        response = client.get("/api/planning-runs/5/compare?baseline_id=3")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    assert result["baseline"]["planning_run_id"] == 3
+    assert result["current"]["planning_run_id"] == 5
+    assert result["delta"]["available_courier_slots"] == 2
+    assert result["delta"]["shortage_courier_slots"] == -2
+
+
+def test_compare_returns_404_for_unknown_baseline():
+    current_run = SimpleNamespace(
+        id=5,
+        dataset_id=2,
+        result={"filename": "current.xlsx", "plan": []},
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(
+        planning_runs_by_id={5: current_run}
+    )
+
+    try:
+        response = client.get("/api/planning-runs/5/compare?baseline_id=999")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Baseline planning run not found",
+    }
+
+
+def test_compare_returns_404_for_unknown_current_run():
+    baseline_run = SimpleNamespace(
+        id=3,
+        dataset_id=1,
+        result={"filename": "baseline.xlsx", "plan": []},
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(
+        planning_runs_by_id={3: baseline_run}
+    )
+
+    try:
+        response = client.get("/api/planning-runs/999/compare?baseline_id=3")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Current planning run not found",
+    }

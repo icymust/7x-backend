@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.engines.comparison import compare_plans
 from app.engines.daily_summary import build_daily_summaries
 from app.models import PlanningRun
 
@@ -191,4 +192,48 @@ def get_planning_run_recommendations(
         "date_to": date_to.isoformat() if date_to else None,
         "row_count": len(recommendations),
         "recommendations": recommendations,
+    }
+
+
+@router.get("/{planning_run_id}/compare")
+def compare_planning_runs(
+    planning_run_id: int,
+    baseline_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+):
+    current_run = db.get(PlanningRun, planning_run_id)
+
+    if current_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Current planning run not found",
+        )
+
+    baseline_run = db.get(PlanningRun, baseline_id)
+
+    if baseline_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Baseline planning run not found",
+        )
+
+    comparison = compare_plans(
+        baseline_plan=baseline_run.result.get("plan", []),
+        current_plan=current_run.result.get("plan", []),
+    )
+
+    return {
+        "baseline": {
+            "planning_run_id": baseline_run.id,
+            "dataset_id": baseline_run.dataset_id,
+            "filename": baseline_run.result.get("filename"),
+            **comparison["baseline"],
+        },
+        "current": {
+            "planning_run_id": current_run.id,
+            "dataset_id": current_run.dataset_id,
+            "filename": current_run.result.get("filename"),
+            **comparison["current"],
+        },
+        "delta": comparison["delta"],
     }

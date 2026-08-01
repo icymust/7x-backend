@@ -132,6 +132,49 @@ frontend.
 shortage/surplus и структурированную recommendation: permanent/outsourced
 counts, deadlines, priority и reason.
 
+## GET /api/planning-runs/{planning_run_id}/compare
+
+Query parameter `baseline_id` указывает ID старого Planning Run. Path parameter
+указывает текущий Planning Run.
+
+Ответ содержит capacity totals для `baseline` и `current`, а также `delta`,
+рассчитанную как `current - baseline`:
+
+```json
+{
+  "baseline": {
+    "planning_run_id": 3,
+    "dataset_id": 1,
+    "filename": "baseline.xlsx",
+    "row_count": 4,
+    "required_courier_slots": 417,
+    "available_courier_slots": 43,
+    "shortage_courier_slots": 374,
+    "surplus_courier_slots": 0
+  },
+  "current": {
+    "planning_run_id": 5,
+    "dataset_id": 2,
+    "filename": "current.xlsx",
+    "row_count": 4,
+    "required_courier_slots": 400,
+    "available_courier_slots": 50,
+    "shortage_courier_slots": 350,
+    "surplus_courier_slots": 0
+  },
+  "delta": {
+    "row_count": 0,
+    "required_courier_slots": -17,
+    "available_courier_slots": 7,
+    "shortage_courier_slots": -24,
+    "surplus_courier_slots": 0
+  }
+}
+```
+
+Отрицательный `shortage_courier_slots` в `delta` означает уменьшение дефицита.
+Сравнение одинаковых расчётов корректно возвращает нулевую delta.
+
 ## Ошибки
 
 - `400`: файл не `.xlsx` или Excel невозможно прочитать;
