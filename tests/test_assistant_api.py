@@ -49,7 +49,12 @@ def create_planning_run():
     )
 
 
-def test_explains_saved_planning_run():
+def test_explains_saved_planning_run(monkeypatch):
+    monkeypatch.setattr(
+        assistant_api,
+        "request_llm_explanation",
+        lambda context, language: None,
+    )
     app.dependency_overrides[get_db] = lambda: FakeDatabase(create_planning_run())
 
     try:

@@ -69,6 +69,7 @@ def test_returns_explanation_from_ollama(monkeypatch):
     assert captured_request["url"] == ("http://ollama.test:11434/api/chat")
     assert captured_request["body"]["model"] == "qwen2.5:7b"
     assert captured_request["body"]["stream"] is False
+    assert captured_request["body"]["think"] is False
     assert '"shortage": 10' in (captured_request["body"]["messages"][1]["content"])
 
 

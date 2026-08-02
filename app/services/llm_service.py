@@ -56,6 +56,7 @@ def request_llm_explanation(
             json={
                 "model": model,
                 "stream": False,
+                "think": False,
                 "messages": [
                     {
                         "role": "system",

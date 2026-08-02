@@ -181,6 +181,8 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - Ollama HTTP client с configurable URL, model, timeout и mock-тестами.
 - Endpoint `POST /api/assistant/explain` с Ollama response и
   автоматическим structured fallback.
+- Live-подключение FastAPI на Mac к `qwen3:8b` на Windows RTX 3080
+  через Tailscale; проверены общий и отфильтрованный HR-ответы.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
 - Frontend response contract в `docs/API_CONTRACT.md`.
