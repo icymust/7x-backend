@@ -34,7 +34,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
 | `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
-| `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с severity, coverage, required/available, shortage/surplus и recommendations count. |
+| `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с UAE calendar metadata, severity, coverage, required/available, shortage/surplus и recommendations count. |
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
 | `GET` | `/api/planning-runs/{planning_run_id}/notifications` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает urgent shortage, upcoming shortage, hiring start required и staff surplus alerts. |
 | `GET` | `/api/planning-runs/{planning_run_id}/compare` | Path: `planning_run_id`; Query: `baseline_id` от `1` | Сравнивает current Planning Run с baseline и возвращает `delta = current - baseline`. |
@@ -63,6 +63,24 @@ Endpoints `kpis`, `calendar`, `recommendations` и `notifications` поддер�
 | `store_id` | Фильтр по конкретному магазину |
 
 Если `date_from` позже `date_to`, backend возвращает `422`.
+
+## UAE calendar metadata
+
+Каждый элемент `calendar` содержит:
+
+```json
+{
+  "date": "2026-08-01",
+  "is_weekend": true,
+  "is_public_holiday": false,
+  "holiday_name": null
+}
+```
+
+Backend использует Saturday/Sunday как календарный UAE weekend по умолчанию.
+Эти поля являются информационными и сами не изменяют forecast, capacity или
+availability. Справочник public holidays пока пуст и будет заполнен только
+после получения официально подтверждённых дат.
 
 ## KPI
 

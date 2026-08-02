@@ -1,6 +1,8 @@
 from collections import defaultdict
 from datetime import date, datetime
 
+from app.services.uae_calendar import get_uae_calendar_metadata
+
 
 def _extract_date(value: str | date | datetime) -> str:
     if isinstance(value, datetime):
@@ -45,6 +47,7 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
     summaries = []
 
     for day, rows in sorted(grouped_rows.items()):
+        calendar_metadata = get_uae_calendar_metadata(day)
         required = sum(row["required_couriers"] for row in rows)
         available = sum(row["available_couriers"] for row in rows)
         shortage = sum(row["shortage"] for row in rows)
@@ -83,6 +86,7 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
         summaries.append(
             {
                 "date": day,
+                **calendar_metadata,
                 "severity": _calculate_severity(
                     shortage,
                     required,

@@ -160,6 +160,7 @@ recommendations, daily summary и notifications. Опциональный Ollama
   - priority и машиночитаемая причина рекомендации.
 - Daily Summary Engine для календаря:
   - группировка подробного planning plan по дням;
+  - UAE weekend metadata и подготовленные поля public holiday;
   - daily coverage, required и available courier slots;
   - daily shortage, surplus и количество затронутых магазинов;
   - количество рекомендаций за день;
@@ -197,4 +198,4 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 63 теста проходят.
+- Автоматические тесты pytest: 66 тестов проходят.

@@ -35,6 +35,9 @@ def test_builds_critical_daily_summary():
 
     assert summaries[0] == {
         "date": "2026-08-01",
+        "is_weekend": True,
+        "is_public_holiday": False,
+        "holiday_name": None,
         "severity": "critical",
         "coverage_percent": 14.6,
         "required_courier_slots": 130,
