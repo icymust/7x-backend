@@ -15,14 +15,17 @@ pytest
 # Запустить Docker на macOS
 colima start
 
-# Запустить PostgreSQL проекта
-docker compose up -d
+# Собрать и запустить backend + PostgreSQL одной командой
+docker compose up --build -d
 
 # Проверить состояние контейнера
 docker compose ps
 
 # Посмотреть логи PostgreSQL
 docker compose logs postgres
+
+# Посмотреть логи FastAPI и Alembic
+docker compose logs -f backend
 
 # Проверить готовность PostgreSQL
 docker compose exec postgres pg_isready -U sevenx -d sevenx
@@ -191,5 +194,7 @@ recommendations, daily summary и notifications. Опциональный Ollama
   локальной сети.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
+- Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
+  Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - Автоматические тесты pytest: 63 теста проходят.
