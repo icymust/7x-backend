@@ -62,7 +62,7 @@ alembic upgrade head
               |                           |
               v                           |
    ML Productivity Estimator              |
-   deliveries per courier                 |
+   planned; baseline from Excel           |
               |                           |
               └─────────────┬─────────────┘
                             v
@@ -71,8 +71,8 @@ alembic upgrade head
                             |
                             v
           Workforce Optimization Engine
-              powered by Google OR-Tools
-              permanent / outsourced / cost
+          planned: Google OR-Tools + cost
+          current fallback: rule-based 60/40
                             |
                             v
                 Recommendation Engine
@@ -121,9 +121,9 @@ recommendations, daily summary и notifications. Опциональный Ollama
    обученной модели и подходящих исторических данных.
 4. Capacity Engine рассчитывает required, effective available, shortage и
    surplus по каждому store/time bucket.
-5. Workforce Optimization Engine, powered by Google OR-Tools, подбирает
-   permanent/outsourced mix с учётом сроков, стоимости и ограничений. До его
-   подключения используется rule-based mix 60/40.
+5. Сейчас backend использует rule-based permanent/outsourced mix 60/40.
+   Workforce Optimization Engine на Google OR-Tools будет добавлен после
+   получения полей стоимости и ограничений из официального Dataset.
 6. Recommendation Engine формирует количество, deadline, priority и reason.
 7. Daily Summary группирует результат по дням для календаря.
 8. Explanation Context Builder собирает компактный контекст выбранного дня или

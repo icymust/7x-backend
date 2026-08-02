@@ -16,7 +16,10 @@ Swagger: `http://127.0.0.1:8000/docs`
    `GET /api/planning-runs/{id}`.
 4. После загрузки нового Excel вызвать `POST /api/planning/calculate` и сразу
    показать данные из ответа.
-5. Для календаря и рекомендаций использовать отдельные endpoints с фильтрами.
+5. Для календаря, рекомендаций и уведомлений использовать
+   отдельные endpoints с фильтрами.
+6. По кнопке AI Explain вызвать `POST /api/assistant/explain` для
+   выбранного Planning Run и текущих фильтров dashboard.
 
 ## 1. Preview Excel
 
@@ -32,8 +35,8 @@ Swagger: `http://127.0.0.1:8000/docs`
 `POST /api/planning/calculate`
 
 - Request: `.xlsx` в multipart-поле `file`.
-- Query: `target_utilization` — default `0.85`.
-- Query: `planning_date` — опциональная дата.
+- Query: `target_utilization` — больше `0` и не больше `1`, default `0.85`.
+- Query: `planning_date` — опциональная дата, default — текущая дата backend.
 - Response: `plan`, `calendar`, `dataset_id`, `planning_run_id`, filename,
   planning date и row count.
 
@@ -114,6 +117,39 @@ hiring start required и staff surplus. Каждый alert содержит seve
 
 Request JSON: `planning_run_id`, опциональные `date_from`, `date_to`,
 `store_id` и `language` (`en` или `ru`).
+Неиспользуемые опциональные поля нужно исключать из JSON или передавать как
+`null`. Нельзя отправлять Swagger placeholder `"string"` как `store_id`.
+
+Весь Planning Run:
+
+```json
+{
+  "planning_run_id": 1,
+  "language": "en"
+}
+```
+
+Один магазин:
+
+```json
+{
+  "planning_run_id": 1,
+  "store_id": "DXB-001",
+  "language": "en"
+}
+```
+
+Магазин за выбранный период:
+
+```json
+{
+  "planning_run_id": 1,
+  "date_from": "2026-08-01",
+  "date_to": "2026-08-31",
+  "store_id": "DXB-001",
+  "language": "en"
+}
+```
 
 Response содержит `source`, `message` и компактный `context` с capacity,
 daily summary, recommendations и notifications. При успешном ответе
@@ -121,6 +157,7 @@ Ollama backend возвращает `source: ollama` и текст в `message`.
 выключена, недоступна или не успела ответить, backend возвращает
 `source: structured_fallback` и `message: null`.
 Числа и кадровые решения формирует backend, а не LLM.
+Если фильтры не нашли строк, `context.scope.plan_rows` будет равен `0`.
 
 ## Служебные endpoints
 
