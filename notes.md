@@ -178,9 +178,10 @@ recommendations, daily summary и notifications. Опциональный Ollama
   deadline и staff surplus alerts.
 - Explanation Context Builder для компактной передачи готовых
   расчётов в LLM.
-- Endpoint `POST /api/assistant/explain` с structured fallback до
-  подключения Ollama.
+- Ollama HTTP client с configurable URL, model, timeout и mock-тестами.
+- Endpoint `POST /api/assistant/explain` с Ollama response и
+  автоматическим structured fallback.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
 - Frontend response contract в `docs/API_CONTRACT.md`.
-- Автоматические тесты pytest: 52 теста проходят.
+- Автоматические тесты pytest: 56 тестов проходят.

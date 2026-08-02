@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.api import assistant as assistant_api
 from app.database import get_db
 from app.main import app
 
@@ -109,3 +110,33 @@ def test_assistant_rejects_invalid_date_range():
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
+
+
+def test_returns_ollama_explanation(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(create_planning_run())
+
+    monkeypatch.setattr(
+        assistant_api,
+        "request_llm_explanation",
+        lambda context, language: "DXB-001 has a critical shortage of 2 couriers.",
+    )
+
+    try:
+        response = client.post(
+            "/api/assistant/explain",
+            json={
+                "planning_run_id": 5,
+                "store_id": "DXB-001",
+                "language": "en",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    assert result["source"] == "ollama"
+    assert result["message"] == ("DXB-001 has a critical shortage of 2 couriers.")
+    assert result["context"]["scope"]["plan_rows"] == 1

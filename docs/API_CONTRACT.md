@@ -116,8 +116,10 @@ Request JSON: `planning_run_id`, опциональные `date_from`, `date_to`
 `store_id` и `language` (`en` или `ru`).
 
 Response содержит `source`, `message` и компактный `context` с capacity,
-daily summary, recommendations и notifications. Пока Ollama не подключена,
-backend возвращает `source: structured_fallback` и `message: null`.
+daily summary, recommendations и notifications. При успешном ответе
+Ollama backend возвращает `source: ollama` и текст в `message`. Если LLM
+выключена, недоступна или не успела ответить, backend возвращает
+`source: structured_fallback` и `message: null`.
 Числа и кадровые решения формирует backend, а не LLM.
 
 ## Служебные endpoints

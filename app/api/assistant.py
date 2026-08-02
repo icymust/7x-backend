@@ -5,6 +5,7 @@ from app.database import get_db
 from app.engines.explanation_context import build_explanation_context
 from app.models import PlanningRun
 from app.schemas.assistant import ExplainRequest
+from app.services.llm_service import request_llm_explanation
 
 router = APIRouter(
     prefix="/api/assistant",
@@ -36,9 +37,14 @@ def explain_planning_run(
         store_id=request.store_id,
     )
 
+    message = request_llm_explanation(
+        context,
+        request.language,
+    )
+
     return {
-        "source": "structured_fallback",
+        "source": "ollama" if message else "structured_fallback",
         "language": request.language,
-        "message": None,
+        "message": message,
         "context": context,
     }
