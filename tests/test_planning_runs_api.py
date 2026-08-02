@@ -651,3 +651,49 @@ def test_rejects_invalid_notifications_date_range():
     assert response.json() == {
         "detail": "date_from cannot be later than date_to",
     }
+
+
+def test_gets_planning_run_stores():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={
+            "plan": [
+                {"store_id": "DXB-002"},
+                {"store_id": "DXB-001"},
+                {"store_id": "DXB-001"},
+            ]
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get("/api/planning-runs/5/stores")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "planning_run_id": 5,
+        "dataset_id": 1,
+        "store_count": 2,
+        "stores": [
+            "DXB-001",
+            "DXB-002",
+        ],
+    }
+
+
+def test_stores_return_404_for_unknown_run():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get("/api/planning-runs/999/stores")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Planning run not found",
+    }

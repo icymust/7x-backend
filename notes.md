@@ -171,6 +171,7 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - API чтения сохранённых результатов:
   - список Planning Runs с `total`, `limit` и `offset`;
   - полный Planning Run по ID;
+  - список уникальных магазинов для frontend dropdown;
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
 - Comparison Engine и endpoint сравнения двух Planning Runs по capacity totals.
@@ -186,5 +187,5 @@ recommendations, daily summary и notifications. Опциональный Ollama
   локальной сети.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
-- Frontend response contract в `docs/API_CONTRACT.md`.
-- Автоматические тесты pytest: 56 тестов проходят.
+- Frontend API contract в `docs/ENDPOINTS.md`.
+- Автоматические тесты pytest: 58 тестов проходят.

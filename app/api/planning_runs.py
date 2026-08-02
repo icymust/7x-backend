@@ -78,6 +78,37 @@ def get_planning_run(
     }
 
 
+@router.get("/{planning_run_id}/stores")
+def get_planning_run_stores(
+    planning_run_id: int,
+    db: Session = Depends(get_db),
+):
+    planning_run = db.get(PlanningRun, planning_run_id)
+
+    if planning_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Planning run not found",
+        )
+
+    plan = planning_run.result.get("plan", [])
+
+    stores = sorted(
+        {
+            str(plan_row["store_id"])
+            for plan_row in plan
+            if plan_row.get("store_id") is not None
+        }
+    )
+
+    return {
+        "planning_run_id": planning_run.id,
+        "dataset_id": planning_run.dataset_id,
+        "store_count": len(stores),
+        "stores": stores,
+    }
+
+
 @router.get("/{planning_run_id}/calendar")
 def get_planning_run_calendar(
     planning_run_id: int,
