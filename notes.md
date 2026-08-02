@@ -136,6 +136,7 @@ recommendations, daily summary и notifications. Опциональный Ollama
 ## Что уже сделано в backend
 
 - FastAPI-приложение со Swagger и endpoint `/health`.
+- Health endpoints для PostgreSQL и опциональной Ollama-модели.
 - Загрузка `.xlsx` и preview листов, колонок и первых строк.
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
@@ -172,6 +173,7 @@ recommendations, daily summary и notifications. Опциональный Ollama
   - список Planning Runs с `total`, `limit` и `offset`;
   - полный Planning Run по ID;
   - список уникальных магазинов для frontend dropdown;
+  - operational KPI для dashboard;
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
 - Comparison Engine и endpoint сравнения двух Planning Runs по capacity totals.
@@ -182,10 +184,12 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - Ollama HTTP client с configurable URL, model, timeout и mock-тестами.
 - Endpoint `POST /api/assistant/explain` с Ollama response и
   автоматическим structured fallback.
+- Endpoint `GET /health/ollama` со статусами `ok`, `disabled`, `unavailable`
+  и `model_missing`.
 - Live-подключение FastAPI на Mac к `qwen3:8b` на Windows RTX 3080
   через Tailscale Serve; Ollama слушает localhost и недоступна из обычной
   локальной сети.
 - Понятные validation issues в preview и calculate API.
 - Настраиваемый CORS для разрешённых frontend origins.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 58 тестов проходят.
+- Автоматические тесты pytest: 63 теста проходят.

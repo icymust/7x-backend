@@ -40,7 +40,7 @@ def request_llm_explanation(
 
     model = os.getenv(
         "OLLAMA_MODEL",
-        "qwen2.5:7b",
+        "qwen3:8b",
     )
 
     try:
@@ -94,3 +94,70 @@ def request_llm_explanation(
         AttributeError,
     ):
         return None
+
+
+def check_ollama_health() -> dict[str, str | bool]:
+    model = os.getenv(
+        "OLLAMA_MODEL",
+        "qwen3:8b",
+    )
+
+    if not is_ollama_enabled():
+        return {
+            "status": "disabled",
+            "enabled": False,
+            "model": model,
+            "model_available": False,
+            "fallback_available": True,
+        }
+
+    base_url = os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://127.0.0.1:11434",
+    ).rstrip("/")
+
+    try:
+        timeout = float(
+            os.getenv(
+                "OLLAMA_HEALTH_TIMEOUT_SECONDS",
+                "3",
+            )
+        )
+
+        response = httpx.get(
+            f"{base_url}/api/tags",
+            timeout=timeout,
+        )
+
+        response.raise_for_status()
+        response_data = response.json()
+
+        available_models = {
+            model_data.get("name")
+            for model_data in response_data.get("models", [])
+            if isinstance(model_data, dict)
+        }
+
+    except (
+        httpx.HTTPError,
+        ValueError,
+        TypeError,
+        AttributeError,
+    ):
+        return {
+            "status": "unavailable",
+            "enabled": True,
+            "model": model,
+            "model_available": False,
+            "fallback_available": True,
+        }
+
+    model_available = model in available_models
+
+    return {
+        "status": "ok" if model_available else "model_missing",
+        "enabled": True,
+        "model": model,
+        "model_available": model_available,
+        "fallback_available": True,
+    }

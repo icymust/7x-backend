@@ -697,3 +697,115 @@ def test_stores_return_404_for_unknown_run():
     assert response.json() == {
         "detail": "Planning run not found",
     }
+
+
+def test_gets_filtered_planning_run_kpis():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={
+            "plan": [
+                {
+                    "store_id": "DXB-001",
+                    "time_bucket": "2026-08-01T09:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 8,
+                    "shortage": 2,
+                    "surplus": 0,
+                    "recommendation": {
+                        "priority": "critical",
+                        "reason": "emergency_outsourcing_required",
+                    },
+                },
+                {
+                    "store_id": "DXB-001",
+                    "time_bucket": "2026-08-02T09:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 12,
+                    "shortage": 0,
+                    "surplus": 2,
+                    "recommendation": {
+                        "priority": "low",
+                        "reason": "no_hiring_required",
+                    },
+                },
+                {
+                    "store_id": "DXB-002",
+                    "time_bucket": "2026-09-01T09:00:00",
+                    "required_couriers": 20,
+                    "available_couriers": 20,
+                    "shortage": 0,
+                    "surplus": 0,
+                    "recommendation": {},
+                },
+            ]
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/kpis"
+            "?store_id=DXB-001"
+            "&date_from=2026-08-01"
+            "&date_to=2026-08-31"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "planning_run_id": 5,
+        "dataset_id": 1,
+        "store_id": "DXB-001",
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-31",
+        "kpis": {
+            "row_count": 2,
+            "required_courier_slots": 20,
+            "available_courier_slots": 20,
+            "shortage_courier_slots": 2,
+            "surplus_courier_slots": 2,
+            "store_count": 1,
+            "affected_stores": 1,
+            "coverage_percent": 90.0,
+            "understaffed_buckets": 1,
+            "balanced_buckets": 0,
+            "overstaffed_buckets": 1,
+            "critical_days": 1,
+            "emergency_hiring_actions": 1,
+        },
+    }
+
+
+def test_kpis_return_404_for_unknown_run():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get("/api/planning-runs/999/kpis")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Planning run not found",
+    }
+
+
+def test_rejects_invalid_kpi_date_range():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/kpis"
+            "?date_from=2026-09-01"
+            "&date_to=2026-08-01"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "date_from cannot be later than date_to",
+    }

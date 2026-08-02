@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,6 +12,7 @@ from app.api.datasets import router as datasets_router
 from app.api.planning import router as planning_router
 from app.api.planning_runs import router as planning_runs_router
 from app.database import get_db
+from app.services.llm_service import check_ollama_health
 
 load_dotenv()
 
@@ -59,3 +60,16 @@ def database_health(db: Session = Depends(get_db)):
         "status": "ok",
         "database": "connected",
     }
+
+
+@app.get("/health/ollama")
+def ollama_health(response: Response):
+    result = check_ollama_health()
+
+    if result["status"] in {
+        "unavailable",
+        "model_missing",
+    }:
+        response.status_code = 503
+
+    return result

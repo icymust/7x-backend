@@ -20,7 +20,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 5. Перед расчётом можно проверить Excel через
    `POST /api/datasets/preview`.
 6. Для расчёта и сохранения вызвать `POST /api/planning/calculate`.
-7. Календарь, рекомендации и уведомления запрашивать отдельными
+7. KPI, календарь, рекомендации и уведомления запрашивать отдельными
    endpoints с текущими фильтрами dashboard.
 8. По кнопке AI Explain вызвать `POST /api/assistant/explain`.
 
@@ -33,6 +33,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs` | Query: `limit` от `1` до `100`, default `20`; `offset` от `0` | Возвращает `total` и Planning Runs от нового к старому. |
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
+| `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
 | `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с severity, coverage, required/available, shortage/surplus и recommendations count. |
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
 | `GET` | `/api/planning-runs/{planning_run_id}/notifications` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает urgent shortage, upcoming shortage, hiring start required и staff surplus alerts. |
@@ -40,6 +41,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `POST` | `/api/assistant/explain` | JSON: `planning_run_id`; optional `date_from`, `date_to`, `store_id`, `language` | Возвращает human-friendly Ollama explanation или structured fallback вместе с готовым backend context. |
 | `GET` | `/health` | Нет | Проверяет, что FastAPI отвечает. |
 | `GET` | `/health/database` | Нет | Проверяет доступность PostgreSQL. |
+| `GET` | `/health/ollama` | Нет | Проверяет, включена ли Ollama, доступна ли она и загружена ли настроенная модель. Fallback backend остаётся доступен независимо от результата. |
 
 ## Важное поведение
 
@@ -51,8 +53,8 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 
 ## Фильтры
 
-Endpoints `calendar`, `recommendations` и `notifications` поддерживают одинаковые
-фильтры:
+Endpoints `kpis`, `calendar`, `recommendations` и `notifications` поддерживают
+одинаковые фильтры:
 
 | Параметр | Описание |
 |---|---|
@@ -61,6 +63,24 @@ Endpoints `calendar`, `recommendations` и `notifications` поддержива�
 | `store_id` | Фильтр по конкретному магазину |
 
 Если `date_from` позже `date_to`, backend возвращает `422`.
+
+## KPI
+
+`GET /api/planning-runs/{planning_run_id}/kpis` считает показатели только по
+строкам, попавшим в выбранные фильтры. `required`, `available`, `shortage` и
+`surplus` являются courier slots по временным интервалам, а не количеством
+уникальных людей.
+
+- `coverage_percent` — доля покрытого спроса, максимум 100%;
+- `understaffed_buckets` — интервалы с дефицитом;
+- `balanced_buckets` — интервалы без дефицита и избытка;
+- `overstaffed_buckets` — интервалы с избытком;
+- `critical_days` — дни со статусом `critical`;
+- `emergency_hiring_actions` — интервалы с причиной
+  `emergency_outsourcing_required`.
+
+Стоимость, экономия и фактический SLA не возвращаются, пока официальный Dataset
+не содержит необходимых исходных данных.
 
 ## AI Explain
 
@@ -114,4 +134,4 @@ Swagger placeholder `"string"` нельзя отправлять как `store_i
 | `400` | Неверный формат файла или Excel невозможно прочитать |
 | `404` | Planning Run не найден |
 | `422` | Ошибка валидации или неправильный диапазон дат |
-| `503` | PostgreSQL недоступен при проверке базы |
+| `503` | PostgreSQL недоступен либо Ollama/настроенная модель недоступна при health-check |
