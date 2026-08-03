@@ -809,3 +809,56 @@ def test_rejects_invalid_kpi_date_range():
     assert response.json() == {
         "detail": "date_from cannot be later than date_to",
     }
+
+
+def test_gets_planning_run_decision_plan():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        planning_date=date(2026, 8, 1),
+        result={
+            "plan": [
+                {
+                    "store_id": "DXB-001",
+                    "time_bucket": "2026-08-02T09:00:00",
+                    "shortage": 4,
+                }
+            ]
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get("/api/planning-runs/5/decision-plan")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    assert result["planning_run_id"] == 5
+    assert result["dataset_id"] == 1
+    assert result["method"] == "rolling_rule_based_v1"
+    assert result["planning_date"] == "2026-08-01"
+    assert result["horizon_start"] == "2026-08-01"
+    assert result["horizon_end"] == "2026-10-29"
+    assert result["actions_count"] == 1
+    assert result["actions"][0]["action_type"] == "emergency_outsourcing"
+    assert result["decision_stages"][0]["status"] == "pending_input_data"
+    assert result["decision_stages"][3]["status"] == "active"
+
+
+def test_decision_plan_returns_404_for_unknown_run():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get("/api/planning-runs/999/decision-plan")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Planning run not found",
+    }

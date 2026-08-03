@@ -20,8 +20,8 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 5. Перед расчётом можно проверить Excel через
    `POST /api/datasets/preview`.
 6. Для расчёта и сохранения вызвать `POST /api/planning/calculate`.
-7. KPI, календарь, рекомендации и уведомления запрашивать отдельными
-   endpoints с текущими фильтрами dashboard.
+7. KPI, decision plan, календарь, рекомендации и уведомления запрашивать
+   отдельными endpoints для выбранного Planning Run.
 8. По кнопке AI Explain вызвать `POST /api/assistant/explain`.
 
 ## Endpoints
@@ -34,6 +34,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
 | `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
+| `GET` | `/api/planning-runs/{planning_run_id}/decision-plan` | Path: `planning_run_id` | Строит агрегированный rolling workforce decision plan на 90 дней от сохранённого `planning_date`. |
 | `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с UAE calendar metadata, severity, coverage, required/available, shortage/surplus и recommendations count. |
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
 | `GET` | `/api/planning-runs/{planning_run_id}/notifications` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает urgent shortage, upcoming shortage, hiring start required и staff surplus alerts. |
@@ -99,6 +100,55 @@ availability. Справочник public holidays пока пуст и буде
 
 Стоимость, экономия и фактический SLA не возвращаются, пока официальный Dataset
 не содержит необходимых исходных данных.
+
+## Rolling decision plan
+
+`GET /api/planning-runs/{planning_run_id}/decision-plan` использует сохранённый
+`plan` и строит действия на 90 календарных дней, включая `planning_date`.
+Planning Run не изменяется, а результат пересчитывается одинаково при каждом
+запросе.
+
+Горизонты:
+
+- `0–10` дней — `emergency_outsourcing`;
+- `11–45` дней — `planned_outsourcing`;
+- `46–90` дней — `planned_outsourcing` для temporary shortage и
+  `permanent_hiring` для persistent shortage после учёта lead time.
+
+Shortage считается `persistent`, если присутствует минимум в 5 разных днях или
+в 3 разных ISO-неделях внутри соответствующего горизонта. Одно действие
+агрегирует несколько time buckets. Поле `couriers` содержит максимальный
+одновременный shortage среди покрываемых buckets, а не их сумму.
+
+Каждое действие содержит:
+
+```json
+{
+  "store_id": "DXB-001",
+  "shortage_period": {
+    "date_from": "2026-10-05",
+    "date_to": "2026-10-09"
+  },
+  "shortage_type": "persistent",
+  "action_type": "permanent_hiring",
+  "couriers": 6,
+  "deadline": "2026-08-06",
+  "priority": "medium",
+  "reason": "persistent_shortage_requires_permanent_hiring",
+  "decision_basis": {
+    "shortage_days": 5,
+    "shortage_weeks": 2
+  },
+  "covered_time_buckets": [
+    "2026-10-05T09:00:00"
+  ]
+}
+```
+
+`schedule_reallocation`, `store_transfer` и `overtime` уже присутствуют в
+`decision_stages`, но имеют `status: pending_input_data`. Backend не применяет
+их, пока официальный Dataset не предоставит shift capacity, location/travel
+time и overtime limits. `limitations` в response явно описывает эти границы.
 
 ## AI Explain
 

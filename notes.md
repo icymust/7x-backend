@@ -129,12 +129,14 @@ recommendations, daily summary и notifications. Опциональный Ollama
    получения полей стоимости и ограничений из официального Dataset.
 6. Recommendation Engine формирует количество, deadline, priority и reason.
 7. Daily Summary группирует результат по дням для календаря.
-8. Explanation Context Builder собирает компактный контекст выбранного дня или
+8. Rolling Decision Plan агрегирует shortage в 90-дневные workforce actions,
+   не создавая отдельный найм для каждого time bucket.
+9. Explanation Context Builder собирает компактный контекст выбранного дня или
    периода из capacity, optimization, recommendations, daily summary и
    notifications.
-9. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
+10. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
    недоступности LLM возвращается структурированный fallback.
-10. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
+11. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
 
 ## Что уже сделано в backend
 
@@ -181,6 +183,9 @@ recommendations, daily summary и notifications. Опциональный Ollama
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
 - Comparison Engine и endpoint сравнения двух Planning Runs по capacity totals.
+- Rolling Decision Plan Engine и 90-дневный API с агрегированными emergency,
+  outsourced и permanent actions; transfer/overtime stages ожидают официальные
+  operational data.
 - Notification Engine и API для urgent shortage, upcoming shortage, hiring
   deadline и staff surplus alerts.
 - Explanation Context Builder для компактной передачи готовых
@@ -198,4 +203,4 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 66 тестов проходят.
+- Автоматические тесты pytest: 72 теста проходят.

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.engines.comparison import compare_plans
 from app.engines.daily_summary import build_daily_summaries
+from app.engines.decision_plan import build_decision_plan
 from app.engines.kpis import build_operational_kpis
 from app.engines.notifications import build_notifications
 from app.models import PlanningRun
@@ -155,6 +156,31 @@ def get_planning_run_kpis(
         "date_from": date_from.isoformat() if date_from else None,
         "date_to": date_to.isoformat() if date_to else None,
         "kpis": build_operational_kpis(filtered_plan),
+    }
+
+
+@router.get("/{planning_run_id}/decision-plan")
+def get_planning_run_decision_plan(
+    planning_run_id: int,
+    db: Session = Depends(get_db),
+):
+    planning_run = db.get(PlanningRun, planning_run_id)
+
+    if planning_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Planning run not found",
+        )
+
+    decision_plan = build_decision_plan(
+        planning_run.result.get("plan", []),
+        planning_date=planning_run.planning_date,
+    )
+
+    return {
+        "planning_run_id": planning_run.id,
+        "dataset_id": planning_run.dataset_id,
+        **decision_plan,
     }
 
 
