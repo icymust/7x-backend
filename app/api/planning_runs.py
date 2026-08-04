@@ -71,12 +71,19 @@ def get_planning_run(
             detail="Planning run not found",
         )
 
+    result = planning_run.result
+
     return {
-        **planning_run.result,
-        "dataset_id": planning_run.dataset_id,
         "planning_run_id": planning_run.id,
-        "model_version": planning_run.model_version,
+        "dataset_id": planning_run.dataset_id,
+        "filename": result.get("filename"),
+        "planning_date": planning_run.planning_date,
         "created_at": planning_run.created_at,
+        "target_utilization": planning_run.target_utilization,
+        "model_version": planning_run.model_version,
+        "row_count": result.get("row_count", 0),
+        "plan": result.get("plan", []),
+        "calendar": result.get("calendar", []),
     }
 
 

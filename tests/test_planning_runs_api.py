@@ -50,6 +50,8 @@ def test_gets_saved_planning_run():
     planning_run = SimpleNamespace(
         id=5,
         dataset_id=1,
+        planning_date=date(2026, 8, 1),
+        target_utilization=0.85,
         model_version="baseline-v1",
         created_at=datetime(
             2026,
@@ -78,10 +80,24 @@ def test_gets_saved_planning_run():
 
     result = response.json()
 
+    assert list(result) == [
+        "planning_run_id",
+        "dataset_id",
+        "filename",
+        "planning_date",
+        "created_at",
+        "target_utilization",
+        "model_version",
+        "row_count",
+        "plan",
+        "calendar",
+    ]
     assert result["planning_run_id"] == 5
     assert result["dataset_id"] == 1
     assert result["model_version"] == "baseline-v1"
     assert result["filename"] == "sample_dataset.xlsx"
+    assert result["planning_date"] == "2026-08-01"
+    assert result["target_utilization"] == 0.85
 
 
 def test_returns_404_for_unknown_planning_run():

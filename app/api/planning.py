@@ -91,10 +91,10 @@ async def calculate_plan(
 
     result = {
         "filename": file.filename,
+        "planning_date": used_planning_date.isoformat(),
         "target_utilization": target_utilization,
         "row_count": len(plan),
         "plan": plan,
-        "planning_date": used_planning_date.isoformat(),
         "calendar": calendar,
     }
 
@@ -116,7 +116,7 @@ async def calculate_plan(
     )
 
     return {
-        **result,
-        "dataset_id": dataset.id,
         "planning_run_id": planning_run.id,
+        "dataset_id": dataset.id,
+        **result,
     }

@@ -38,6 +38,14 @@ def test_calculates_plan_from_excel(monkeypatch):
 
     result = response.json()
 
+    assert list(result)[:6] == [
+        "planning_run_id",
+        "dataset_id",
+        "filename",
+        "planning_date",
+        "target_utilization",
+        "row_count",
+    ]
     assert result["row_count"] == 4
     assert result["plan"][0]["required_couriers"] == 120
     assert result["plan"][0]["shortage"] == 111
