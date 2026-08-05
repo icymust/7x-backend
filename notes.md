@@ -674,4 +674,4 @@ WAPE improvement: 0.0508 percentage points
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 118 тестов проходят.
+- Автоматические тесты pytest: 119 тестов проходят.

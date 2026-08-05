@@ -200,6 +200,8 @@ def test_calculates_plan_from_official_workbook(monkeypatch):
     assert plan_row["store_name"] == "Al Quoz Dark Store"
     assert plan_row["emirate"] == "Dubai"
     assert plan_row["zone"] == "Al Quoz"
+    assert plan_row["latitude"] == 25.1348
+    assert plan_row["longitude"] == 55.2308
     assert plan_row["planning_grain"] == "store_day"
     assert plan_row["forecast_shipments"] == 24
     assert plan_row["baseline_forecast_shipments"] == 24
