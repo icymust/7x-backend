@@ -28,7 +28,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 
 | Method | Endpoint | Параметры | Что делает |
 |---|---|---|---|
-| `POST` | `/api/datasets/preview` | Multipart: `file` (`.xlsx`) | Валидирует Excel, возвращает листы, column mapping, issues и первые 5 строк. Файл не сохраняется. |
+| `POST` | `/api/datasets/preview` | Multipart: `file` (`.xlsx`) | Распознаёт legacy или официальный multi-sheet Excel, валидирует его и возвращает mapping, количество строк и preview. Файл не сохраняется. |
 | `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` в диапазоне `(0, 1]`, default `0.85`; `planning_date` optional, default — текущая дата backend | Валидирует Excel, рассчитывает plan и calendar, сохраняет Dataset и Planning Run. Возвращает результат, `dataset_id` и `planning_run_id`. |
 | `GET` | `/api/planning-runs` | Query: `limit` от `1` до `100`, default `20`; `offset` от `0` | Возвращает `total` и Planning Runs от нового к старому. |
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
@@ -43,6 +43,25 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/health` | Нет | Проверяет, что FastAPI отвечает. |
 | `GET` | `/health/database` | Нет | Проверяет доступность PostgreSQL. |
 | `GET` | `/health/ollama` | Нет | Проверяет, включена ли Ollama, доступна ли она и загружена ли настроенная модель. Fallback backend остаётся доступен независимо от результата. |
+
+## Dataset preview
+
+Для старого плоского Excel endpoint сохраняет прежний response с
+`selected_sheet`, `column_mapping`, `validation` и общим `preview`.
+
+Официальный Dataset определяется по рабочим листам `Store_Metadata`,
+`Demand_Forecast` и `Courier_Roster`. Для него response содержит:
+
+- `dataset_type: workforce_multi_sheet`;
+- `sheets` — все исходные листы, включая информационный `README`;
+- `sheet_previews` — отдельный результат каждого из трёх рабочих листов;
+- `validation.errors` — блокирующие проблемы;
+- `validation.warnings` — неблокирующие проблемы и assumptions.
+
+Каждый элемент `sheet_previews` возвращает `source_sheet`, `canonical_sheet`,
+`original_columns`, `column_mapping`, canonical `columns`, полный `row_count` и
+не более пяти строк в `preview`. Проверяется весь workbook, но capacity здесь не
+рассчитывается и данные в PostgreSQL не сохраняются.
 
 ## Важное поведение
 

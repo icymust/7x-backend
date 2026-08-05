@@ -283,13 +283,27 @@ weekly off, shift times и cross-sheet store integrity. Блокирующие �
 возвращаются в `errors`, а неоднозначные данные — в `warnings`.
 
 На официальном XLSX validator возвращает `is_valid: true`, `0 errors` и пять
-группы warnings:
+групп warnings:
 
 - один store-level productivity outlier (`QED_DXB_02`);
 - suspicious target utilization для всех 10 stores;
 - source shift window не соответствует recruiter rule у 23 FTC;
 - `working_hours` превышает shift window у 16 couriers;
 - отсутствует leave period у 6 couriers со status `On Leave`.
+
+`POST /api/datasets/preview` распознаёт официальный workbook, если в нём есть
+рабочие листы workforce-формата. Для каждого из трёх листов response содержит:
+
+- исходное и canonical название листа;
+- исходные колонки и применённый column mapping;
+- canonical columns и общее количество строк;
+- не более пяти нормализованных строк для интерфейса;
+- общие validation `errors` и `warnings` по всему workbook.
+
+Preview проверяет полный Dataset, но не сохраняет его в PostgreSQL, не запускает
+normalizer и не считает capacity. Если отсутствует обязательный лист или
+core-колонка, validation становится невалидной. Warnings не блокируют следующий
+этап. Старый плоский Excel остаётся совместимым и использует legacy preview.
 
 `app/importers/workforce_normalizer.py` принимает проверенные три DataFrame и
 собирает единые capacity rows с grain `store_id + time_bucket`. Он:
@@ -322,8 +336,8 @@ weekly off, shift times и cross-sheet store integrity. Блокирующие �
   `target_utilization_percent` сохраняется только как metadata.
 
 Проверка полного официального файла дала 43 680 capacity rows, 10 stores и
-период `2026-04-28 00:00` — `2026-07-27 23:30`. Normalizer пока не подключён к
-`/preview` и `/calculate`.
+период `2026-04-28 00:00` — `2026-07-27 23:30`. Loader и validator подключены к
+`/preview`; normalizer пока не подключён к `/calculate`.
 
 ## Формулы официального Dataset
 
@@ -480,6 +494,8 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
 - FastAPI-приложение со Swagger и endpoint `/health`.
 - Health endpoints для PostgreSQL и опциональной Ollama-модели.
 - Загрузка `.xlsx` и preview листов, колонок и первых строк.
+- Multi-sheet preview официального workbook с отдельными результатами для
+  `Store_Metadata`, `Demand_Forecast` и `Courier_Roster`.
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
 - Mapping и multi-sheet loader официального workforce Dataset.
 - Workforce validator для трёх листов и cross-sheet связей.
@@ -544,4 +560,4 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 90 тестов проходят.
+- Автоматические тесты pytest: 92 теста проходят.
