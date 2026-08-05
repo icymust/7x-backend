@@ -70,3 +70,36 @@ def test_marks_surplus_day():
 
     assert summaries[0]["severity"] == "surplus"
     assert summaries[0]["coverage_percent"] == 100.0
+
+
+def test_daily_coverage_does_not_move_capacity_between_stores():
+    plan = [
+        {
+            "store_id": "DXB-001",
+            "time_bucket": "2026-08-03T00:00:00",
+            "planning_grain": "store_day",
+            "forecast_shipments": 20,
+            "required_couriers": 2,
+            "available_couriers": 0,
+            "required_courier_hours": 10,
+            "available_courier_hours": 0,
+            "shortage": 2,
+            "surplus": 0,
+        },
+        {
+            "store_id": "DXB-002",
+            "time_bucket": "2026-08-03T00:00:00",
+            "planning_grain": "store_day",
+            "forecast_shipments": 20,
+            "required_couriers": 2,
+            "available_couriers": 4,
+            "required_courier_hours": 10,
+            "available_courier_hours": 20,
+            "shortage": 0,
+            "surplus": 1,
+        },
+    ]
+
+    summary = build_daily_summaries(plan)[0]
+
+    assert summary["coverage_percent"] == 50.0

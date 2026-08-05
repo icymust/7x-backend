@@ -10,9 +10,14 @@ def recommend_workforce_mix(
     effective_permanent: int,
     effective_outsourced: int,
     target_permanent_ratio: float = 0.60,
+    shortage_override: int | None = None,
 ) -> dict:
     available = effective_permanent + effective_outsourced
-    shortage = max(required_couriers - available, 0)
+    shortage = (
+        max(required_couriers - available, 0)
+        if shortage_override is None
+        else max(shortage_override, 0)
+    )
 
     target_permanent = ceil(required_couriers * target_permanent_ratio)
     target_outsourced = required_couriers - target_permanent
@@ -64,11 +69,13 @@ def build_recommendation(
     effective_outsourced: int,
     demand_date: str | date | datetime,
     planning_date: str | date | datetime,
+    shortage_override: int | None = None,
 ) -> dict:
     mix = recommend_workforce_mix(
         required_couriers=required_couriers,
         effective_permanent=effective_permanent,
         effective_outsourced=effective_outsourced,
+        shortage_override=shortage_override,
     )
 
     deadlines = calculate_hiring_deadlines(demand_date)

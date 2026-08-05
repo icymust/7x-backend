@@ -48,20 +48,48 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
 
     for day, rows in sorted(grouped_rows.items()):
         calendar_metadata = get_uae_calendar_metadata(day)
+        is_daily_plan = all(
+            row.get("planning_grain") == "store_day" for row in rows
+        )
+
+        if "is_weekend" in rows[0]:
+            calendar_metadata["is_weekend"] = bool(rows[0]["is_weekend"])
+
         required = sum(row["required_couriers"] for row in rows)
         available = sum(row["available_couriers"] for row in rows)
         shortage = sum(row["shortage"] for row in rows)
         surplus = sum(row["surplus"] for row in rows)
 
-        covered = sum(
-            min(
-                row["required_couriers"],
-                row["available_couriers"],
+        if is_daily_plan:
+            required_hours = sum(
+                float(row.get("required_courier_hours", 0)) for row in rows
             )
-            for row in rows
-        )
-
-        coverage_percent = round(covered / required * 100, 1) if required else 100.0
+            available_hours = sum(
+                float(row.get("available_courier_hours", 0)) for row in rows
+            )
+            covered_hours = sum(
+                min(
+                    float(row.get("required_courier_hours", 0)),
+                    float(row.get("available_courier_hours", 0)),
+                )
+                for row in rows
+            )
+            coverage_percent = (
+                round(covered_hours / required_hours * 100, 1)
+                if required_hours
+                else 100.0
+            )
+        else:
+            covered = sum(
+                min(
+                    row["required_couriers"],
+                    row["available_couriers"],
+                )
+                for row in rows
+            )
+            coverage_percent = (
+                round(covered / required * 100, 1) if required else 100.0
+            )
 
         affected_stores = {row["store_id"] for row in rows if row["shortage"] > 0}
 
@@ -83,8 +111,7 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
             )
         )
 
-        summaries.append(
-            {
+        summary = {
                 "date": day,
                 **calendar_metadata,
                 "severity": _calculate_severity(
@@ -101,6 +128,44 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
                 "affected_stores": len(affected_stores),
                 "recommendations_count": recommendations_count,
             }
-        )
+
+        if is_daily_plan:
+            summary.update(
+                {
+                    "planning_grain": "store_day",
+                    "forecast_orders": round(
+                        sum(
+                            float(
+                                row.get(
+                                    "planning_demand_shipments",
+                                    row["forecast_shipments"],
+                                )
+                            )
+                            for row in rows
+                        ),
+                        2,
+                    ),
+                    "baseline_forecast_orders": round(
+                        sum(float(row["forecast_shipments"]) for row in rows),
+                        2,
+                    ),
+                    "predicted_orders": round(
+                        sum(
+                            float(
+                                row.get(
+                                    "predicted_shipments",
+                                    row["forecast_shipments"],
+                                )
+                            )
+                            for row in rows
+                        ),
+                        2,
+                    ),
+                    "required_courier_hours": round(required_hours, 2),
+                    "available_courier_hours": round(available_hours, 2),
+                }
+            )
+
+        summaries.append(summary)
 
     return summaries

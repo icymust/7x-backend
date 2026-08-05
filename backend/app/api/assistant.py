@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.engines.explanation_context import build_explanation_context
+from app.engines.explanation_context import (
+    DecisionActionNotFoundError,
+    build_explanation_context,
+)
 from app.models import PlanningRun
 from app.schemas.assistant import ExplainRequest
 from app.services.llm_service import request_llm_explanation
@@ -26,16 +29,24 @@ def explain_planning_run(
             detail="Planning run not found",
         )
 
-    context = build_explanation_context(
-        planning_run.result.get("plan", []),
-        planning_run_id=planning_run.id,
-        dataset_id=planning_run.dataset_id,
-        filename=planning_run.result.get("filename"),
-        model_version=planning_run.model_version,
-        date_from=request.date_from,
-        date_to=request.date_to,
-        store_id=request.store_id,
-    )
+    try:
+        context = build_explanation_context(
+            planning_run.result.get("plan", []),
+            planning_run_id=planning_run.id,
+            dataset_id=planning_run.dataset_id,
+            filename=planning_run.result.get("filename"),
+            model_version=planning_run.model_version,
+            planning_date=planning_run.planning_date,
+            date_from=request.date_from,
+            date_to=request.date_to,
+            store_id=request.store_id,
+            decision_action_id=request.decision_action_id,
+        )
+    except DecisionActionNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=str(error),
+        ) from error
 
     message = request_llm_explanation(
         context,

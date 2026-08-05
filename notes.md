@@ -15,6 +15,10 @@ uvicorn app.main:app --reload
 # Запустить все тесты
 pytest
 
+# Оценить качество исходного forecast на official Dataset
+python scripts/evaluate_forecast_baseline.py \
+  "real_data/Dataset_AI-Powered Workforce Planning & Capacity Intelligence_Final.xlsx"
+
 # Вернуться в корень monorepo для Docker-команд
 cd ..
 
@@ -80,8 +84,12 @@ Docker Compose запускается из корня repository.
              Import → Mapping → Validation → Normalization
                                 |
                                 v
-             30-minute canonical capacity rows
-       demand + store metadata + FTE/FTC availability
+            Daily aggregation: store_id + date
+       daily orders + store metadata + FTE/FTC hours
+                                |
+                                v
+                     CatBoost Demand Forecast
+             Excel baseline + learned residual correction
                                 |
                                 v
                          Capacity Engine
@@ -132,46 +140,70 @@ Docker Compose запускается из корня repository.
                                 v
                              Frontend
 
-Planned extensions after integration of the official dataset:
+Current decision flow:
 
-Historical forecast + actual volume → ML Forecast Corrector → Capacity Engine
-Official costs and constraints → OR-Tools Workforce Optimizer → Recommendations
+Historical actual demand → CatBoost correction → Predicted Demand
+Predicted Demand + Current Workforce → Workforce Gap
+Workforce Gap → Rolling Decision Plan → Ollama explanation
 ```
 
 Backend является источником точных значений: количества курьеров, сроков,
-приоритетов и кодов причин. Пока ML-модель не подключена, Capacity Engine
-использует `forecast_volume` и DPH из Excel как baseline. Официальный Dataset
-содержит `actual_volume`, поэтому после корректного importer можно провести
-time-based backtest модели, которая корректирует forecast или прогнозирует
-required couriers. Отдельного Workforce Optimizer сейчас нет: соотношение
-60/40 является правилом Recommendation Engine. OR-Tools будет добавлен только
-после появления подтверждённых ограничений и стоимости. Explanation Context
-Builder собирает для выбранного дня или периода capacity, optimization status,
-recommendations, daily summary и notifications. Опциональный Ollama LLM может
-только превратить готовый контекст в понятный человеку текст и не участвует в
-расчётах.
+приоритетов и кодов причин. CatBoost корректирует `forecast_volume` из Excel,
+после чего Capacity Engine рассчитывает workforce gap. Если модель недоступна,
+используется исходный Excel forecast. Отдельного Workforce Optimizer сейчас
+нет: соотношение 60/40 является правилом Recommendation Engine. OR-Tools будет
+добавлен только после появления подтверждённых ограничений и стоимости.
+Explanation Context Builder собирает capacity, recommendations, daily summary,
+notifications и rolling decision actions. Ollama только объясняет этот готовый
+контекст и не участвует в расчётах.
 
 ## Основной flow
 
 1. Пользователь загружает Excel с forecast, workforce и leave.
 2. Backend читает файл, сопоставляет колонки и валидирует значения.
-3. Productivity берётся из Excel или предсказывается ML-моделью при наличии
-   обученной модели и подходящих исторических данных.
+3. CatBoost корректирует `forecast_volume` по историческим `actual_volume`,
+   store и временным признакам; Excel forecast остаётся fallback.
 4. Capacity Engine рассчитывает required, effective available, shortage и
    surplus по каждому store/time bucket.
-5. Сейчас backend использует rule-based permanent/outsourced mix 60/40.
-   Workforce Optimization Engine на Google OR-Tools будет добавлен после
-   получения полей стоимости и ограничений из официального Dataset.
-6. Recommendation Engine формирует количество, deadline, priority и reason.
-7. Daily Summary группирует результат по дням для календаря.
-8. Rolling Decision Plan агрегирует shortage в 90-дневные workforce actions,
+5. Decision Engine формирует только выполнимые варианты действий: transfer,
+   overtime, FTC, FTE или их комбинацию. Текущий fallback использует mix 60/40.
+6. Rule-based scoring ранжирует варианты по coverage, сроку готовности,
+   стоимости и риску и возвращает до трёх рекомендаций.
+7. Для выбранных рекомендаций backend формирует количество, deadline, priority
+   и reason.
+8. Daily Summary группирует результат по дням для календаря.
+9. Rolling Decision Plan агрегирует shortage в 90-дневные workforce actions,
    не создавая отдельный найм для каждого time bucket.
-9. Explanation Context Builder собирает компактный контекст выбранного дня или
-   периода из capacity, optimization, recommendations, daily summary и
-   notifications.
-10. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
+10. Explanation Context Builder собирает компактный контекст выбранного дня или
+   периода из capacity, recommendations, daily summary, notifications и
+   rolling decision plan.
+11. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
    недоступности LLM возвращается структурированный fallback.
-11. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
+12. FastAPI отдаёт frontend подробный plan, recommendation cards, calendar
+    summary и explanations.
+
+## Целевые recommendation cards
+
+После расчёта workforce gap система должна возвращать от одной до трёх карточек
+с разными полезными компромиссами:
+
+- `best_overall` — лучший баланс coverage, срока, стоимости и риска;
+- `lowest_cost` — самый дешёвый из выполнимых вариантов;
+- `fastest` — вариант с минимальным временем готовности.
+
+Карточка может комбинировать действия, например transfer нескольких couriers и
+добавление FTC. Она содержит actions, ожидаемый `coverage_percent`,
+`cost_level`, `risk_level`, `ready_in`, reason и покрываемый период. Backend не
+обязан возвращать ровно три карточки: если выполним только один честный вариант,
+возвращается одна рекомендация без искусственных альтернатив.
+
+На первом этапе ranking остаётся rule-based и объяснимым. Coverage считается из
+capacity plan, readiness — из подтверждённых lead times, а cost/risk используют
+явную business configuration. Значения нельзя выдавать как точные, если для них
+нет подтверждённых входных данных. Отдельный ML Ranking Model возможен только
+после накопления истории выбранных менеджером вариантов и фактических outcomes.
+Выбор карточки делает менеджер; сохранение этого выбора потребует отдельного API
+и станет источником данных для будущего ranking model.
 
 ## Официальный Dataset
 
@@ -249,8 +281,8 @@ Excel. Подтверждено:
 - `actual_volume` и `forecast_error` являются target/evaluation data. Их нельзя
   передавать ML-модели как признаки для той же строки, иначе возникнет data
   leakage.
-- Dataset использует Friday/Saturday как weekend, а текущий legacy calendar
-  backend использует Saturday/Sunday и должен быть адаптирован.
+- Dataset использует Friday/Saturday как weekend. Official calculation передаёт
+  это значение в calendar; legacy flow сохраняет Saturday/Sunday default.
 
 Противоречащие значения Excel не исправляются внутри исходного файла. Backend
 сохраняет их для аудита, применяет подтверждённые recruiter rules и возвращает
@@ -305,39 +337,36 @@ normalizer и не считает capacity. Если отсутствует об
 core-колонка, validation становится невалидной. Warnings не блокируют следующий
 этап. Старый плоский Excel остаётся совместимым и использует legacy preview.
 
-`app/importers/workforce_normalizer.py` принимает проверенные три DataFrame и
-собирает единые capacity rows с grain `store_id + time_bucket`. Он:
+`app/importers/workforce_normalizer.py` принимает проверенные три DataFrame.
+Он сохраняет получасовые canonical rows для возможного будущего анализа, а для
+основного MVP дополнительно собирает daily rows с grain `store_id + date`:
 
 - объединяет `date + time_slot` в `time_bucket`;
 - сохраняет длительность каждого slot как `0.5` часа;
 - присоединяет store name, emirate, zone, coordinates и raw store productivity;
-- применяет recruiter capacity `2 deliveries/hour × 0.5 = 1 delivery/slot`;
+- суммирует forecast и actual за все интервалы дня;
 - считает FTE как permanent, а FTC как outsourced;
 - вычисляет shift end как `shift_start + 9h` для FTE или `shift_start + 11h`
   для FTC и учитывает overnight shifts;
 - учитывает weekly off и status `On Leave`;
 - сохраняет actual volume и forecast error только для будущего ML/backtest.
 
-Для совместимости с Capacity Engine поля `available_permanent` и
-`available_outsourced` означают couriers, смена которых покрывает slot. Поля
-`permanent_unavailable` и `outsourced_unavailable` содержат находящихся среди
-них на weekly off или `On Leave`. Поэтому effective availability будет
-рассчитана ровно один раз внутри Capacity Engine.
+В daily rows один courier учитывается один раз за день. Его доступная мощность
+равна 8 рабочим часам для FTE или 10 для FTC. Получасовая shift availability не
+используется основным MVP.
 
-Временные assumptions normalizer возвращает явно:
+Для MVP официальный расчёт использует суточный grain:
 
-- recruiter shift duration важнее конфликтующего source `shift_end`;
-- вычисленный shift end не включается в смену;
-- один час break пока не назначается конкретным slots, потому что break schedule
-  отсутствует;
-- из-за отсутствия leave dates status `On Leave` действует на весь горизонт;
-- capacity slot использует подтверждённую productivity `1 delivery`;
-- official target utilization равен `1.0`, а подозрительный raw
-  `target_utilization_percent` сохраняется только как metadata.
+- одна строка plan = один магазин + один день;
+- 48 исходных получасовых строк суммируются в дневное количество заказов;
+- `On Leave` считается недоступным на всём горизонте, потому что дат отпуска
+  нет;
+- weekly off исключает курьера из доступности в соответствующий день;
+- распределение людей внутри смены оставлено менеджеру.
 
-Проверка полного официального файла дала 43 680 capacity rows, 10 stores и
-период `2026-04-28 00:00` — `2026-07-27 23:30`. Loader и validator подключены к
-`/preview`; normalizer пока не подключён к `/calculate`.
+Полный официальный файл превращается из 43 680 строк demand в 910 дневных строк:
+10 stores × 91 день. Исходные получасовые данные остаются в Excel и могут быть
+использованы позже, но основной MVP их не показывает.
 
 ## Формулы официального Dataset
 
@@ -345,78 +374,53 @@ core-колонка, validation становится невалидной. Warni
 store productivity и courier roster. Backend последовательно получает из них
 следующие значения.
 
-### Нормализация временного интервала
+### Суточная агрегация спроса
 
 ```text
-time_bucket = date + time_slot
-time_bucket_hours = 30 / 60 = 0.5
-productivity_per_courier = 2 deliveries/hour × 0.5 = 1 delivery
-official_target_utilization = 1.0
+daily_forecast_orders = sum(forecast_shipments по store_id и date)
+daily_actual_orders = sum(actual_shipments по store_id и date)
 ```
 
-`productivity_per_courier` показывает, сколько доставок один courier способен
-выполнить за один 30-минутный slot. Recruiters подтвердили это значение, поэтому
-store-level `base_dph` сохраняется для аудита/ML, но не управляет staffing.
+ML и dashboard работают с дневным количеством заказов. `actual_shipments`
+используется как historical target для ML, а не как известное будущее значение.
 
 ### Доступность workforce
 
-Для каждого courier normalizer берёт `shift_start`, затем по recruiter rule
-вычисляет конец присутствия:
+Для каждого магазина и дня считаются уникальные FTE и FTC:
 
 ```text
-FTE shift end = shift_start + 8 work hours + 1 break hour
-FTC shift end = shift_start + 10 work hours + 1 break hour
+effective_FTE = all FTE - weekly off - On Leave
+effective_FTC = all FTC - weekly off - On Leave
+
+available_courier_hours = effective_FTE × 8 + effective_FTC × 10
+available_delivery_capacity = available_courier_hours × 2
 ```
 
-После этого для каждого store и time bucket считаются couriers, чья вычисленная
-смена покрывает интервал:
-
-```text
-available_permanent = количество FTE внутри shift interval
-available_outsourced = количество FTC внутри shift interval
-
-permanent_unavailable = FTE внутри смены с weekly off или On Leave
-outsourced_unavailable = FTC внутри смены с weekly off или On Leave
-
-effective_permanent = available_permanent - permanent_unavailable
-effective_outsourced = available_outsourced - outsourced_unavailable
-available_couriers = effective_permanent + effective_outsourced
-```
-
-Несмотря на название, `available_permanent/outsourced` здесь означает
-запланированный roster внутри смены до вычета отсутствующих. Это сохраняет
-совместимость с существующим Capacity Engine.
+Один FTE может выполнить примерно 16 заказов в день, один FTC — 20. Час break
+не входит в 8/10 рабочих часов.
 
 ### Требуемое количество и дефицит
 
-После подключения official normalizer к `/calculate` существующий Capacity
-Engine будет применять:
+В official `/calculate` используется простая формула:
 
 ```text
-required_couriers = ceil(
-    forecast_shipments
-    / productivity_per_courier
-    / target_utilization
-)
+required_courier_hours = daily_forecast_orders / 2
 
-capacity_gap = available_couriers - required_couriers
-shortage = max(required_couriers - available_couriers, 0)
-surplus = max(available_couriers - required_couriers, 0)
+average_working_hours = 8 × 60% + 10 × 40% = 8.8
+required_couriers = ceil(required_courier_hours / 8.8)
+
+shortage_hours = max(required_courier_hours - available_courier_hours, 0)
+surplus_hours = max(available_courier_hours - required_courier_hours, 0)
+
+shortage = ceil(shortage_hours / 8.8)
+surplus = floor(surplus_hours / 8.8)
 ```
 
-Для official flow `productivity_per_courier = 1` и
-`target_utilization = 1.0`, поэтому формула упрощается:
+Это прозрачный MVP-расчёт, а не оптимизация смен. Target mix 60/40 используется
+только для перевода требуемых часов в приблизительное количество людей.
 
-```text
-required_couriers = ceil(forecast_shipments)
-```
-
-Неподтверждённый buffer `0.85` не применяется. Значения
-`target_utilisation_pct = 16–20` из Excel остаются raw metadata.
-
-`actual_shipments` и `forecast_error` не участвуют в расчёте staffing для той же
-строки: это было бы target leakage. Они используются только для оценки качества
-forecast и будущего time-based ML backtest.
+`actual_shipments` и `forecast_error` не участвуют в расчёте будущего staffing:
+они используются только для обучения и проверки ML.
 
 ### Recommendation Engine
 
@@ -440,32 +444,27 @@ Permanent hiring за 60 дней пока остаётся MVP assumption. Recr
 KPI не берутся готовыми из Excel. `GET /api/planning-runs/{id}/kpis` агрегирует
 уже рассчитанные capacity rows выбранного Planning Run, магазина и периода.
 
-Текущие операционные KPI:
+Текущие операционные KPI для official daily plan:
 
 ```text
-required_courier_slots = sum(required_couriers)
-available_courier_slots = sum(available_couriers)
-shortage_courier_slots = sum(shortage)
-surplus_courier_slots = sum(surplus)
-
-covered_slots = sum(min(required_couriers, available_couriers))
-coverage_percent = covered_slots / required_courier_slots × 100
+required_courier_hours = sum(required_courier_hours)
+available_courier_hours = sum(available_courier_hours)
+covered_hours = min(required_courier_hours, available_courier_hours)
+coverage_percent = covered_hours / required_courier_hours × 100
 ```
 
 - `coverage_percent` — какая доля требуемой courier capacity покрыта;
-- `understaffed_buckets` — сколько временных интервалов имеют shortage;
-- `balanced_buckets` — сколько интервалов закрыто без shortage и surplus;
-- `overstaffed_buckets` — сколько интервалов имеют surplus;
+- `understaffed_buckets` — сколько store-days имеют shortage;
+- `balanced_buckets` — сколько store-days закрыто без shortage и surplus;
+- `overstaffed_buckets` — сколько store-days имеют surplus;
 - `affected_stores` — сколько stores сталкиваются с дефицитом;
 - `critical_days` — дни, где shortage не менее 20% required capacity либо
   существует recommendation с priority `critical`;
-- `emergency_hiring_actions` — количество time buckets, которым требуется
+- `emergency_hiring_actions` — количество store-days, которым требуется
   emergency outsourcing.
 
-Суммы `*_courier_slots` не являются количеством уникальных couriers: один
-courier может учитываться в нескольких 30-минутных slots. Для решения «сколько
-людей одновременно нужно» используются bucket-level значения и maximum
-shortage, а не сумма за день или месяц.
+Старые поля `*_courier_slots` временно сохранены для обратной совместимости API,
+но в official flow каждая строка уже соответствует одному store-day.
 
 Из `forecast_shipments` и `actual_shipments` также реально добавить KPI качества
 прогноза:
@@ -489,6 +488,70 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
 честно рассчитать overtime cost, on-time delivery/SLA и фактическую
 эффективность transfers: соответствующие данные отсутствуют.
 
+## ML preparation и forecast baseline
+
+`app/ml/demand_features.py` собирает training DataFrame напрямую из проверенного
+multi-sheet workbook. Отдельный CSV не создаётся. Grain — `store_id + date`,
+target — дневная сумма `actual_shipments`.
+
+Признаки: store, emirate, zone, weekday, month, Friday/Saturday weekend,
+дневная сумма исходного forecast, lag actual за предыдущий день и rolling mean
+за 7/28 прошлых дней. Перед rolling применяется `shift(1)`, поэтому будущие
+actual values не попадают в признаки.
+
+`split_training_data_by_time` оставляет последние 20% дат для test и не
+перемешивает строки случайно. `scripts/evaluate_forecast_baseline.py` сравнивает
+исходный `forecast_shipments` с `actual_shipments` через MAE, bias и WAPE.
+
+Результат official Dataset:
+
+```text
+train: 2026-04-28 — 2026-07-08, 720 store-days
+test:  2026-07-09 — 2026-07-27, 190 store-days
+test MAE: 6.0842 deliveries per store-day
+test bias: 0.9579 (actual - forecast)
+test WAPE: 1.8982%
+```
+
+`CatBoostRegressor` обучается как residual correction: исходный forecast
+остаётся сильным baseline, а модель прогнозирует его поправку. Категориальные
+признаки `store_id`, `emirate` и `zone` передаются CatBoost напрямую.
+
+Команда обучения:
+
+```bash
+cd backend
+python scripts/train_demand_model.py \
+  "real_data/Dataset_AI-Powered Workforce Planning & Capacity Intelligence_Final.xlsx"
+```
+
+Честный backtest на тех же последних 19 днях:
+
+```text
+Excel baseline: MAE 6.0842, WAPE 1.8982%
+CatBoost:       MAE 6.0630, WAPE 1.8916%
+WAPE improvement: 0.0066 percentage points
+```
+
+Улучшение небольшое, но измеримое. Финальная модель после backtest переобучена
+на всех 910 historical store-days и сохранена как
+`model_artifacts/demand_forecast.cbm`. Dataset синтетический, поэтому метрики не
+гарантируют production accuracy.
+
+Official `/calculate` загружает готовую модель и для каждого store-day
+возвращает:
+
+```text
+baseline_forecast_shipments = исходный прогноз Excel
+predicted_shipments = baseline + CatBoost correction
+planning_demand_shipments = значение, по которому backend считает couriers
+prediction_source = catboost
+```
+
+Если модель отсутствует или несовместима, `predicted_shipments` становится
+равным Excel forecast, а `prediction_source` — `excel_baseline`. Повторное
+обучение при загрузке Excel не запускается.
+
 ## Что уже сделано в backend
 
 - FastAPI-приложение со Swagger и endpoint `/health`.
@@ -499,8 +562,18 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
 - Mapping и multi-sheet loader официального workforce Dataset.
 - Workforce validator для трёх листов и cross-sheet связей.
-- Workforce normalizer для 30-минутных capacity rows, shift availability,
-  FTE/FTC, weekly off и leave.
+- Workforce normalizer сохраняет исходные 30-минутные строки и формирует
+  основной daily plan: FTE/FTC, 8/10 рабочих часов, weekly off и leave.
+- CatBoost daily demand model обучена и проверена относительно Excel baseline.
+- CatBoost подключена к official `/calculate` с безопасным Excel fallback.
+- Rolling actions содержат проверяемый `evidence`: baseline/ML demand,
+  model source, peak required/available и shortage до действия.
+- Горизонт `one_week_to_one_month` однозначно означает дни `4–29`, а не
+  фиксированную недельную длительность action.
+- Каждое rolling action имеет стабильный `action_id`; frontend передаёт его в
+  `/api/assistant/explain`, чтобы получить объяснение одной выбранной карточки.
+- Ollama получает summary всех actions и сбалансированные примеры каждого
+  горизонта; она только переводит evidence в короткое объяснение.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -508,9 +581,13 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
   - required couriers;
   - available couriers;
   - shortage и surplus;
-  - настраиваемый target utilization;
+  - настраиваемый target utilization для legacy flow и фиксированный `1.0` для
+    official flow;
   - отсутствующие permanent и outsourced из-за отпуска или выходного.
-- Endpoint `POST /api/planning/calculate` для расчёта загруженного Excel.
+- Endpoint `POST /api/planning/calculate` для legacy и официального multi-sheet
+  Excel с сохранением `Dataset` и `PlanningRun`.
+- Official planning result содержит `store_name`, `emirate`, `zone`, validation
+  warnings, normalization assumptions и `model_version`.
 - Rule-based Recommendation Engine:
   - целевое соотношение 60% permanent и 40% outsourced;
   - сколько permanent и outsourced нужно добавить;
@@ -560,4 +637,6 @@ Salary и revenue отсутствуют в XLSX, но подтверждены 
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 92 теста проходят.
+- ML training-data builder с leakage-safe lag/rolling features и time split.
+- CLI для оценки forecast baseline по MAE, bias и WAPE.
+- Автоматические тесты pytest: 110 тестов проходят.

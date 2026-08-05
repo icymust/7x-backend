@@ -1,6 +1,7 @@
 from app.engines.capacity import (
     calculate_capacity,
     calculate_capacity_plan,
+    calculate_daily_capacity,
 )
 
 
@@ -78,3 +79,18 @@ def test_subtracts_unavailable_couriers():
     assert result["effective_available_outsourced"] == 3
     assert result["available_couriers"] == 9
     assert result["shortage"] == 6
+
+
+def test_calculates_daily_capacity_from_orders_and_working_hours():
+    result = calculate_daily_capacity(
+        forecast_shipments=100,
+        available_permanent=3,
+        available_outsourced=1,
+    )
+
+    assert result["required_courier_hours"] == 50
+    assert result["available_courier_hours"] == 34
+    assert result["required_couriers"] == 6
+    assert result["available_couriers"] == 4
+    assert result["shortage"] == 2
+    assert result["available_delivery_capacity"] == 68

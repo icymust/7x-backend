@@ -119,6 +119,24 @@ def test_builds_half_hour_capacity_rows_with_store_metadata():
     assert first_row["actual_shipments"] == 4
 
 
+def test_builds_daily_capacity_rows_without_counting_shift_slots():
+    result = normalize_workforce_workbook(create_workforce_workbook())
+    daily = result.daily_capacity_rows
+    tuesday = daily.loc[
+        daily["date"].eq(pd.Timestamp("2026-04-28"))
+    ].iloc[0]
+
+    assert len(daily) == 2
+    assert tuesday["forecast_shipments"] == 6
+    assert tuesday["actual_shipments"] == 7
+    assert tuesday["planning_grain"] == "store_day"
+    assert tuesday["productivity_per_courier"] == pytest.approx(17.6)
+    assert tuesday["available_permanent"] == 2
+    assert tuesday["permanent_unavailable"] == 1
+    assert tuesday["available_outsourced"] == 1
+    assert tuesday["outsourced_unavailable"] == 1
+
+
 def test_counts_shift_coverage_weekly_off_and_leave():
     result = normalize_workforce_workbook(create_workforce_workbook())
     rows = result.capacity_rows.set_index("time_bucket")
@@ -160,6 +178,8 @@ def test_derives_friday_saturday_weekend_and_reports_assumptions():
         "break_schedule_is_missing",
         "recruiter_productivity_rule",
         "official_target_utilization_is_one",
+        "daily_planning_grain",
+        "daily_target_mix_average",
     }
     assert {
         warning["code"] for warning in result.validation_warnings

@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from app.engines.comparison import summarize_plan
 from app.engines.daily_summary import build_daily_summaries
+from app.engines.decision_plan import build_decision_plan
 from app.engines.notifications import build_notifications
 
 PRIORITY_ORDER = {
@@ -12,6 +13,17 @@ PRIORITY_ORDER = {
     "low": 1,
     "surplus": 1,
 }
+
+DECISION_HORIZON_ORDER = {
+    "today": 0,
+    "one_to_three_days": 1,
+    "one_week_to_one_month": 2,
+    "one_to_three_months": 3,
+}
+
+
+class DecisionActionNotFoundError(ValueError):
+    pass
 
 
 def _extract_date(value: str | date | datetime) -> date:
@@ -24,6 +36,82 @@ def _extract_date(value: str | date | datetime) -> date:
     return datetime.fromisoformat(value).date()
 
 
+def _select_balanced_decision_actions(
+    actions: list[dict],
+    max_items: int,
+) -> list[dict]:
+    grouped_actions: dict[tuple[str, str], list[dict]] = {}
+
+    for action in actions:
+        key = (
+            str(action["time_horizon"]),
+            str(action["action_type"]),
+        )
+        grouped_actions.setdefault(key, []).append(action)
+
+    ordered_keys = sorted(
+        grouped_actions,
+        key=lambda key: (
+            DECISION_HORIZON_ORDER.get(key[0], 99),
+            key[1],
+        ),
+    )
+    selected = []
+    item_index = 0
+
+    while len(selected) < max_items:
+        added_item = False
+
+        for key in ordered_keys:
+            group = grouped_actions[key]
+
+            if item_index >= len(group):
+                continue
+
+            selected.append(group[item_index])
+            added_item = True
+
+            if len(selected) == max_items:
+                break
+
+        if not added_item:
+            break
+
+        item_index += 1
+
+    return selected
+
+
+def _summarize_decision_actions(actions: list[dict]) -> list[dict]:
+    grouped_actions: dict[tuple[str, str], list[dict]] = {}
+
+    for action in actions:
+        key = (
+            str(action["time_horizon"]),
+            str(action["action_type"]),
+        )
+        grouped_actions.setdefault(key, []).append(action)
+
+    return [
+        {
+            "time_horizon": time_horizon,
+            "action_type": action_type,
+            "actions_count": len(group),
+            "affected_stores": len(
+                {str(action["store_id"]) for action in group}
+            ),
+            "maximum_couriers": max(int(action["couriers"]) for action in group),
+        }
+        for (time_horizon, action_type), group in sorted(
+            grouped_actions.items(),
+            key=lambda item: (
+                DECISION_HORIZON_ORDER.get(item[0][0], 99),
+                item[0][1],
+            ),
+        )
+    ]
+
+
 def build_explanation_context(
     plan: list[dict],
     *,
@@ -31,9 +119,11 @@ def build_explanation_context(
     dataset_id: int,
     filename: str | None,
     model_version: str,
+    planning_date: date,
     date_from: date | None = None,
     date_to: date | None = None,
     store_id: str | None = None,
+    decision_action_id: str | None = None,
     max_items: int = 10,
 ) -> dict:
     if date_from and date_to and date_from > date_to:
@@ -41,6 +131,35 @@ def build_explanation_context(
 
     if max_items <= 0:
         raise ValueError("max_items must be greater than zero")
+
+    rolling_plan = build_decision_plan(
+        plan,
+        planning_date=planning_date,
+    )
+    selected_action = None
+
+    if decision_action_id:
+        selected_action = next(
+            (
+                action
+                for action in rolling_plan["actions"]
+                if action["action_id"] == decision_action_id
+            ),
+            None,
+        )
+
+        if selected_action is None:
+            raise DecisionActionNotFoundError(
+                "Decision action not found"
+            )
+
+        store_id = selected_action["store_id"]
+        date_from = date.fromisoformat(
+            selected_action["shortage_period"]["date_from"]
+        )
+        date_to = date.fromisoformat(
+            selected_action["shortage_period"]["date_to"]
+        )
 
     filtered_plan = []
 
@@ -126,6 +245,27 @@ def build_explanation_context(
         reverse=True,
     )
 
+    decision_actions = [selected_action] if selected_action else []
+
+    for action in rolling_plan["actions"] if not selected_action else []:
+        if store_id and action["store_id"] != store_id:
+            continue
+
+        action_date_from = date.fromisoformat(
+            action["shortage_period"]["date_from"]
+        )
+        action_date_to = date.fromisoformat(
+            action["shortage_period"]["date_to"]
+        )
+
+        if date_from and action_date_to < date_from:
+            continue
+
+        if date_to and action_date_from > date_to:
+            continue
+
+        decision_actions.append(action)
+
     return {
         "planning_run": {
             "planning_run_id": planning_run_id,
@@ -134,6 +274,7 @@ def build_explanation_context(
             "model_version": model_version,
         },
         "scope": {
+            "decision_action_id": decision_action_id,
             "store_id": store_id,
             "date_from": (date_from.isoformat() if date_from else None),
             "date_to": (date_to.isoformat() if date_to else None),
@@ -153,6 +294,19 @@ def build_explanation_context(
             "total": len(recommendations),
             "truncated": len(recommendations) > max_items,
             "items": recommendations[:max_items],
+        },
+        "decision_plan": {
+            "method": rolling_plan["method"],
+            "planning_date": rolling_plan["planning_date"],
+            "horizon_start": rolling_plan["horizon_start"],
+            "horizon_end": rolling_plan["horizon_end"],
+            "total": len(decision_actions),
+            "truncated": len(decision_actions) > max_items,
+            "summary": _summarize_decision_actions(decision_actions),
+            "items": _select_balanced_decision_actions(
+                decision_actions,
+                max_items,
+            ),
         },
         "notifications": {
             "total": len(notifications),
