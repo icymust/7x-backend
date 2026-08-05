@@ -5,24 +5,27 @@ export type WarehouseStatus = 'Operational' | 'Under Expansion' | 'Limited Capac
 // Driver-capacity status: how courier headcount is tracking against the
 // orders they're handling. Derived from courierLoadPercent rather than
 // hand-authored, so it can never drift out of sync with that number.
-export type DriverStatus = 'surplus' | 'balanced' | 'shortage'
+export type DriverStatus = 'surplus' | 'balanced' | 'shortage' | 'critical'
 
 export const DRIVER_STATUS_COLOR: Record<DriverStatus, string> = {
   surplus: '#16a34a',
-  balanced: '#d97706',
-  shortage: '#dc2626',
+  balanced: '#2563eb',
+  shortage: '#eab308',
+  critical: '#dc2626',
 }
 
 export const DRIVER_STATUS_LABEL: Record<DriverStatus, string> = {
-  surplus: 'Drivers Available',
-  balanced: 'Drivers Stretched',
-  shortage: 'Driver Shortage',
+  surplus: 'Driver Surplus',
+  balanced: 'Balanced Capacity',
+  shortage: 'High Utilization',
+  critical: 'Driver Shortage',
 }
 
 function computeDriverStatus(courierLoadPercent: number): DriverStatus {
-  if (courierLoadPercent < 65) return 'surplus'
-  if (courierLoadPercent <= 85) return 'balanced'
-  return 'shortage'
+  if (courierLoadPercent < 60) return 'surplus'
+  if (courierLoadPercent <= 75) return 'balanced'
+  if (courierLoadPercent <= 90) return 'shortage'
+  return 'critical'
 }
 
 export interface WarehouseProperties {

@@ -63,7 +63,14 @@ export function getDemandCalendarMonth(warehouseName: string, year: number, mont
   // Branches already short on drivers trend hotter days more often, and
   // branches with headroom trend cooler - mirrors driverStatus instead of
   // contradicting it.
-  const bias = props.driverStatus === 'shortage' ? 1.18 : props.driverStatus === 'surplus' ? 0.88 : 1.0
+  const bias =
+    props.driverStatus === 'critical'
+      ? 1.3
+      : props.driverStatus === 'shortage'
+        ? 1.18
+        : props.driverStatus === 'surplus'
+          ? 0.88
+          : 1.0
 
   const days: DayDemand[] = []
   for (let day = 1; day <= daysInMonth; day++) {
@@ -109,7 +116,14 @@ export function getDemandHourlyData(warehouseName: string): HourlyDemand[] {
 
   const hourlyPeak = props.currentMonthDemand / 8
   const rand = mulberry32(hashString(`${warehouseName}|hourly`))
-  const bias = props.driverStatus === 'shortage' ? 1.12 : props.driverStatus === 'surplus' ? 0.92 : 1.0
+  const bias =
+    props.driverStatus === 'critical'
+      ? 1.22
+      : props.driverStatus === 'shortage'
+        ? 1.12
+        : props.driverStatus === 'surplus'
+          ? 0.92
+          : 1.0
 
   return HOURLY_WEIGHTS.map((weight, hour) => {
     const base = hourlyPeak * (weight / HOURLY_PEAK_WEIGHT) * bias

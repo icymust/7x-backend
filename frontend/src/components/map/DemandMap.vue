@@ -27,7 +27,7 @@ const HEATMAP_LAYER = 'demand-heatmap'
 const POINTS_LAYER = 'demand-points-circles'
 const WAREHOUSE_SOURCE_ID = 'warehouses'
 const WAREHOUSE_LAYER = 'warehouse-icons'
-const DRIVER_STATUSES: DriverStatus[] = ['surplus', 'balanced', 'shortage']
+const DRIVER_STATUSES: DriverStatus[] = ['surplus', 'balanced', 'shortage', 'critical']
 const FOCUS_ZOOM = 13.5
 
 const { isDark } = useTheme()
@@ -156,6 +156,8 @@ async function addLayers() {
           warehouseIconId('balanced'),
           'shortage',
           warehouseIconId('shortage'),
+          'critical',
+          warehouseIconId('critical'),
           warehouseIconId('balanced'),
         ],
         'icon-size': 0.65,

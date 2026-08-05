@@ -23,7 +23,7 @@ const actions: SuggestionAction[] = [
   {
     id: 'transport',
     icon: 'pi pi-truck',
-    title: 'Transport Drivers',
+    title: 'Transfer Drivers',
     description: "Move available couriers in from a nearby branch to cover today's shortage.",
   },
   {

@@ -80,7 +80,10 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
         :class="cell ? `demand-calendar__cell--${cell.level}` : 'demand-calendar__cell--empty'"
         :title="cell ? `${monthAbbrev} ${cell.day}: ${cell.value} orders (${DEMAND_LEVEL_LABEL[cell.level]})` : undefined"
       >
-        <span v-if="cell" class="demand-calendar__day">{{ cell.day }}</span>
+        <template v-if="cell">
+          <span class="demand-calendar__day">{{ cell.day }}</span>
+          <span class="demand-calendar__count">{{ cell.value }}</span>
+        </template>
       </div>
     </div>
 
@@ -98,7 +101,7 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  margin-top: 0.9rem;
+  margin: 0.9rem auto 0;
   max-width: 20rem;
 }
 
@@ -137,6 +140,7 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
 }
 
 .demand-calendar__cell {
+  position: relative;
   aspect-ratio: 1;
   display: flex;
   align-items: flex-start;
@@ -144,16 +148,64 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
   padding: 0.2rem;
   border-radius: 0.35rem;
   border: 1px solid var(--p-content-border-color);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .demand-calendar__cell--empty {
   border-color: transparent;
 }
 
+.demand-calendar__cell:not(.demand-calendar__cell--empty):hover {
+  transform: scale(1.16);
+  z-index: 2;
+  box-shadow: 0 4px 10px rgba(15, 21, 32, 0.18);
+  animation: demand-calendar-pulse 0.6s ease-out;
+}
+
+@keyframes demand-calendar-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 32, 245, 0.45);
+  }
+  100% {
+    box-shadow: 0 4px 10px rgba(15, 21, 32, 0.18);
+  }
+}
+
 .demand-calendar__day {
   font-size: 0.6rem;
   font-weight: 600;
   color: var(--p-text-color);
+  transition: opacity 0.15s ease;
+}
+
+.demand-calendar__cell:hover .demand-calendar__day {
+  opacity: 0;
+}
+
+.demand-calendar__count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--p-text-color);
+  background: var(--p-content-background);
+  border-radius: 0.3rem;
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+}
+
+.demand-calendar__cell:hover .demand-calendar__count {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .demand-calendar__cell--normal {

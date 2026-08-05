@@ -18,7 +18,7 @@ export function warehouseIconDataUri(status: DriverStatus): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`
 }
 
-const DRIVER_STATUSES: DriverStatus[] = ['surplus', 'balanced', 'shortage']
+const DRIVER_STATUSES: DriverStatus[] = ['surplus', 'balanced', 'shortage', 'critical']
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
