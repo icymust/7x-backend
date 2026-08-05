@@ -98,3 +98,18 @@ def test_calculates_daily_capacity_from_orders_and_working_hours():
     assert result["available_couriers"] == 4
     assert result["shortage"] == 2
     assert result["available_delivery_capacity"] == 68
+
+
+def test_calculates_daily_capacity_with_store_base_dph():
+    result = calculate_daily_capacity(
+        forecast_shipments=100,
+        available_permanent=3,
+        available_outsourced=1,
+        deliveries_per_courier_hour=2.5,
+    )
+
+    assert result["required_courier_hours"] == 40
+    assert result["available_courier_hours"] == 34
+    assert result["required_couriers"] == 5
+    assert result["shortage"] == 1
+    assert result["available_delivery_capacity"] == 85

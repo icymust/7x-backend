@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -25,7 +26,7 @@ def build_official_workbook(*, include_roster: bool = True) -> bytes:
                 "lat": 25.1348,
                 "lng": 55.2308,
                 "target_utilisation_pct": 16,
-                "base_dph": 2.0,
+                "base_dph": 2.4,
             }
         ]
     )
@@ -209,14 +210,21 @@ def test_calculates_plan_from_official_workbook(monkeypatch):
     assert plan_row["planning_demand_shipments"] == plan_row[
         "predicted_shipments"
     ]
-    assert plan_row["required_courier_hours"] > 12
+    assert plan_row["base_productivity_per_hour"] == 2.4
+    assert plan_row["deliveries_per_courier_hour"] == 2.4
+    assert plan_row["productivity_per_courier"] == pytest.approx(21.12)
+    assert plan_row["required_courier_hours"] == pytest.approx(
+        plan_row["planning_demand_shipments"] / 2.4,
+        abs=0.01,
+    )
     assert plan_row["available_courier_hours"] == 8
+    assert plan_row["available_delivery_capacity"] == 19.2
     assert plan_row["required_couriers"] == 2
     assert plan_row["available_couriers"] == 1
     assert plan_row["shortage"] == 1
     assert plan_row["recommendation"]["add_outsourced"] == 1
     assert result["calendar"][0]["is_weekend"] is True
-    assert result["calendar"][0]["coverage_percent"] < 66.7
+    assert result["calendar"][0]["coverage_percent"] < 80
 
     assert saved["target_utilization"] == 1.0
     assert saved["model_version"] == "catboost-daily-residual-v1"

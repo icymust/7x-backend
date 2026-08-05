@@ -59,9 +59,13 @@ def calculate_daily_capacity(
     forecast_shipments: float,
     available_permanent: int,
     available_outsourced: int,
+    deliveries_per_courier_hour: float = DELIVERIES_PER_COURIER_HOUR,
     permanent_unavailable: int = 0,
     outsourced_unavailable: int = 0,
 ) -> dict[str, int | float]:
+    if deliveries_per_courier_hour <= 0:
+        raise ValueError("Deliveries per courier hour must be greater than zero")
+
     effective_available_permanent = available_permanent - permanent_unavailable
     effective_available_outsourced = (
         available_outsourced - outsourced_unavailable
@@ -71,7 +75,7 @@ def calculate_daily_capacity(
         raise ValueError("Unavailable couriers cannot exceed available couriers")
 
     required_courier_hours = (
-        float(forecast_shipments) / DELIVERIES_PER_COURIER_HOUR
+        float(forecast_shipments) / deliveries_per_courier_hour
     )
     available_courier_hours = (
         effective_available_permanent
@@ -112,7 +116,7 @@ def calculate_daily_capacity(
         "shortage_courier_hours": round(shortage_courier_hours, 2),
         "surplus_courier_hours": round(surplus_courier_hours, 2),
         "available_delivery_capacity": round(
-            available_courier_hours * DELIVERIES_PER_COURIER_HOUR,
+            available_courier_hours * deliveries_per_courier_hour,
             2,
         ),
     }
@@ -134,6 +138,12 @@ def calculate_capacity_plan(
                 forecast_shipments=planning_demand_shipments,
                 available_permanent=row["available_permanent"],
                 available_outsourced=row["available_outsourced"],
+                deliveries_per_courier_hour=float(
+                    row.get(
+                        "deliveries_per_courier_hour",
+                        DELIVERIES_PER_COURIER_HOUR,
+                    )
+                ),
                 permanent_unavailable=row.get("permanent_unavailable", 0),
                 outsourced_unavailable=row.get("outsourced_unavailable", 0),
             )
@@ -188,6 +198,7 @@ def calculate_capacity_plan(
             "predicted_shipments",
             "prediction_correction",
             "prediction_error",
+            "base_productivity_per_hour",
             "latitude",
             "longitude",
         ]:

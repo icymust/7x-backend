@@ -241,7 +241,8 @@ Grain листа demand: `store_id + date + time_slot`. Период данны�
 приоритетным business source, чем противоречащие им значения синтетического
 Excel. Подтверждено:
 
-- capacity одного courier — 2 deliveries в час или 1 delivery за 30 минут;
+- общий fallback для capacity одного courier — 2 deliveries в час или 1
+  delivery за 30 минут; основной расчёт использует store-specific `base_dph`;
 - FTE — 8 рабочих часов плюс 1 час break;
 - FTC — 10 рабочих часов плюс 1 час break;
 - целевой workforce mix — 60% FTE и 40% FTC;
@@ -273,8 +274,9 @@ Excel. Подтверждено:
 - После применения recruiter shift rule остаётся 13 795 slots с положительным
   forecast без scheduled courier; это 13.8% forecast volume. Нужны operating
   hours или дополнительные ночные shifts, иначе shortage останется высоким.
-- Recruiter подтвердил DPH = 2 deliveries/hour. Для 30-минутного demand slot
-  capacity одного courier равна `2 × 0.5 = 1 delivery`.
+- Recruiter подтвердил общий baseline DPH = 2 deliveries/hour. Поле
+  `Store_Metadata.base_dph` описывает локальную производительность конкретного
+  store и поэтому используется как основной DPH; значение 2 остаётся fallback.
 - В Excel нет labour cost, но salary и revenue подтверждены отдельно recruiters
   и хранятся как business configuration. Overtime limits, фактический on-time
   delivery и store closures всё ещё отсутствуют.
@@ -396,18 +398,19 @@ effective_FTE = all FTE - weekly off - On Leave
 effective_FTC = all FTC - weekly off - On Leave
 
 available_courier_hours = effective_FTE × 8 + effective_FTC × 10
-available_delivery_capacity = available_courier_hours × 2
+store_dph = Store_Metadata.base_dph, fallback 2
+available_delivery_capacity = available_courier_hours × store_dph
 ```
 
-Один FTE может выполнить примерно 16 заказов в день, один FTC — 20. Час break
-не входит в 8/10 рабочих часов.
+Один FTE может выполнить примерно `8 × store_dph` заказов в день, один FTC —
+`10 × store_dph`. Час break не входит в 8/10 рабочих часов.
 
 ### Требуемое количество и дефицит
 
 В official `/calculate` используется простая формула:
 
 ```text
-required_courier_hours = daily_forecast_orders / 2
+required_courier_hours = daily_forecast_orders / store_dph
 
 average_working_hours = 8 × 60% + 10 × 40% = 8.8
 required_couriers = ceil(required_courier_hours / 8.8)
@@ -419,7 +422,8 @@ shortage = ceil(shortage_hours / 8.8)
 surplus = floor(surplus_hours / 8.8)
 ```
 
-Это прозрачный MVP-расчёт, а не оптимизация смен. Target mix 60/40 используется
+Это прозрачный MVP-расчёт, а не оптимизация смен. `base_dph` позволяет учитывать
+разную производительность каждого магазина. Target mix 60/40 используется
 только для перевода требуемых часов в приблизительное количество людей.
 
 `actual_shipments` и `forecast_error` не участвуют в расчёте будущего staffing:

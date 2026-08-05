@@ -4,11 +4,9 @@ import numpy as np
 import pandas as pd
 
 from app.business_rules import (
-    AVERAGE_DELIVERIES_PER_COURIER_DAY,
     AVERAGE_WORKING_HOURS_PER_COURIER,
     BREAK_HOURS,
     DELIVERIES_PER_COURIER_HOUR,
-    DELIVERIES_PER_COURIER_BUCKET,
     OFFICIAL_TARGET_UTILIZATION,
     TIME_BUCKET_HOURS,
     WORKING_HOURS_BY_EMPLOYMENT_TYPE,
@@ -46,10 +44,11 @@ NORMALIZATION_ASSUMPTIONS = [
         ),
     },
     {
-        "code": "recruiter_productivity_rule",
+        "code": "store_base_productivity_rule",
         "description": (
-            "One courier handles two deliveries per hour, or one delivery "
-            "per 30-minute time bucket."
+            "Capacity uses each store's base DPH from Store_Metadata. "
+            "Two deliveries per hour is the fallback when store DPH is "
+            "missing or invalid."
         ),
     },
     {
@@ -77,11 +76,30 @@ NORMALIZATION_ASSUMPTIONS = [
 
 DAILY_PLANNING_ASSUMPTION_CODES = {
     "on_leave_applies_to_full_horizon",
-    "recruiter_productivity_rule",
+    "store_base_productivity_rule",
     "official_target_utilization_is_one",
     "daily_planning_grain",
     "daily_target_mix_average",
 }
+
+
+def _store_productivity_per_hour(dataframe: pd.DataFrame) -> pd.Series:
+    if "base_productivity_per_hour" not in dataframe.columns:
+        return pd.Series(
+            DELIVERIES_PER_COURIER_HOUR,
+            index=dataframe.index,
+            dtype=float,
+        )
+
+    productivity = pd.to_numeric(
+        dataframe["base_productivity_per_hour"],
+        errors="coerce",
+    )
+
+    return productivity.where(
+        productivity > 0,
+        DELIVERIES_PER_COURIER_HOUR,
+    )
 
 
 class WorkforceNormalizationError(ValueError):
@@ -281,13 +299,14 @@ def _build_daily_capacity_rows(
     daily_rows["time_bucket"] = daily_rows["date"]
     daily_rows["planning_grain"] = "store_day"
     daily_rows["deliveries_per_courier_hour"] = (
-        DELIVERIES_PER_COURIER_HOUR
+        _store_productivity_per_hour(daily_rows)
     )
     daily_rows["average_working_hours_per_courier"] = (
         AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["productivity_per_courier"] = (
-        AVERAGE_DELIVERIES_PER_COURIER_DAY
+        daily_rows["deliveries_per_courier_hour"]
+        * AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
 
@@ -359,12 +378,15 @@ def build_future_daily_capacity_rows(
         int
     )
     daily_rows["planning_grain"] = "store_day"
-    daily_rows["deliveries_per_courier_hour"] = DELIVERIES_PER_COURIER_HOUR
+    daily_rows["deliveries_per_courier_hour"] = (
+        _store_productivity_per_hour(daily_rows)
+    )
     daily_rows["average_working_hours_per_courier"] = (
         AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["productivity_per_courier"] = (
-        AVERAGE_DELIVERIES_PER_COURIER_DAY
+        daily_rows["deliveries_per_courier_hour"]
+        * AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
 
@@ -446,7 +468,7 @@ def normalize_workforce_workbook(
         capacity_rows["base_productivity_per_hour"]
     )
     capacity_rows["productivity_per_courier"] = (
-        DELIVERIES_PER_COURIER_BUCKET
+        _store_productivity_per_hour(capacity_rows) * TIME_BUCKET_HOURS
     )
     capacity_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
 

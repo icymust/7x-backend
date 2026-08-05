@@ -85,6 +85,8 @@ Official response дополнительно содержит:
 - `horizon_start` и `horizon_end` для future mode;
 - normalization `assumptions` и `validation_warnings`;
 - `store_name`, `emirate` и `zone` в каждой plan row;
+- `base_productivity_per_hour` и `deliveries_per_courier_hour`: store-specific
+  `base_dph` из `Store_Metadata`, с fallback `2.0`;
 - дневные `required_courier_hours`, `available_courier_hours` и
   `available_delivery_capacity`;
 - `baseline_forecast_shipments`, `predicted_shipments` и
@@ -105,6 +107,15 @@ future CatBoost недоступна, используется `seasonal_naive` 
 останавливают расчёт. Нормализованные данные сохраняются в `Dataset`, а полный
 результат — в новом `PlanningRun`. Legacy response и расчёты сохранены без
 изменения.
+
+Для official flow производительность рассчитывается отдельно для каждого
+магазина:
+
+```text
+store_dph = Store_Metadata.base_dph (fallback: 2.0)
+required_courier_hours = planning_demand_shipments / store_dph
+available_delivery_capacity = available_courier_hours * store_dph
+```
 
 ## Важное поведение
 
