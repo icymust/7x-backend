@@ -27,7 +27,7 @@ services:
     container_name: sevenx-backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sevenx}:${POSTGRES_PASSWORD:-sevenx_dev}@postgres:5432/${POSTGRES_DB:-sevenx}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
       OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
@@ -49,6 +49,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  frontend:
+    image: sevenx-frontend:latest
+    build:
+      context: ./frontend
+    container_name: sevenx-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

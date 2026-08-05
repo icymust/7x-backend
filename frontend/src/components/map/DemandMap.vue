@@ -38,6 +38,7 @@ const map = shallowRef<MapLibreMap>()
 
 const viewModeOptions = ['Heatmap', 'Points']
 const viewMode = ref<'Heatmap' | 'Points'>('Heatmap')
+const selectedDate = ref<Date>(new Date(2026, 4, 15))
 const showDemandChart = ref(false)
 // Defaults to this month + next, matching what the card shows elsewhere,
 // but the picker lets it range over any up to 4 months.
@@ -342,6 +343,16 @@ watch(selectedChartMonths, refreshDemandChartContent, { deep: true })
     <div ref="mapContainer" class="demand-map__canvas" />
 
     <div class="demand-map__panel">
+      <span class="demand-map__panel-label">Date</span>
+      <DatePicker
+        v-model="selectedDate"
+        date-format="dd M yy"
+        :manual-input="false"
+        show-icon
+        icon-display="input"
+        class="demand-map__date-picker"
+      />
+
       <span class="demand-map__panel-label">View</span>
       <SelectButton
         v-model="viewMode"
@@ -413,6 +424,14 @@ watch(selectedChartMonths, refreshDemandChartContent, { deep: true })
 
 .demand-map__panel-label:first-child {
   margin-top: 0;
+}
+
+.demand-map__date-picker.p-datepicker {
+  display: flex;
+}
+
+.demand-map__date-picker :deep(.p-datepicker-input) {
+  width: 100%;
 }
 
 .demand-map__view-toggle {
