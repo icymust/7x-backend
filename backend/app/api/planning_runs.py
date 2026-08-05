@@ -180,19 +180,23 @@ def get_planning_run_decision_plan(
             detail="Planning run not found",
         )
 
-    plan = planning_run.result.get("plan", [])
-
-    if store_id:
-        plan = [
-            plan_row
-            for plan_row in plan
-            if str(plan_row.get("store_id")) == store_id
-        ]
-
     decision_plan = build_decision_plan(
-        plan,
+        planning_run.result.get("plan", []),
         planning_date=planning_run.planning_date,
     )
+
+    if store_id:
+        actions = [
+            action
+            for action in decision_plan["actions"]
+            if action["store_id"] == store_id
+            or action.get("from_store_id") == store_id
+        ]
+        decision_plan = {
+            **decision_plan,
+            "actions_count": len(actions),
+            "actions": actions,
+        }
 
     return {
         "planning_run_id": planning_run.id,

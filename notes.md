@@ -653,7 +653,8 @@ WAPE improvement: 0.0508 percentage points
   outsourced и permanent actions; transfer/overtime stages ожидают официальные
   operational data.
 - Decision Plan API поддерживает optional `store_id`, чтобы frontend получал
-  AI Suggestions только выбранного склада.
+  AI Suggestions выбранного склада. Общий transfer plan рассчитывается до
+  фильтрации, поэтому сохраняются входящие и исходящие transfer actions.
 - Notification Engine и API для urgent shortage, upcoming shortage, hiring
   deadline и staff surplus alerts.
 - Explanation Context Builder для компактной передачи готовых
@@ -673,4 +674,4 @@ WAPE improvement: 0.0508 percentage points
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 115 тестов проходят.
+- Автоматические тесты pytest: 116 тестов проходят.

@@ -908,6 +908,64 @@ def test_filters_decision_plan_by_store():
     }
 
 
+def test_store_filter_keeps_cross_store_transfer_context():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        planning_date=date(2026, 8, 1),
+        result={
+            "plan": [
+                {
+                    "store_id": "DXB-001",
+                    "emirate": "Dubai",
+                    "time_bucket": "2026-08-02T09:00:00",
+                    "shortage": 4,
+                    "surplus": 0,
+                },
+                {
+                    "store_id": "AUH-001",
+                    "emirate": "Abu Dhabi",
+                    "time_bucket": "2026-08-02T09:00:00",
+                    "shortage": 0,
+                    "surplus": 3,
+                },
+            ]
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        destination_response = client.get(
+            "/api/planning-runs/5/decision-plan?store_id=DXB-001"
+        )
+        donor_response = client.get(
+            "/api/planning-runs/5/decision-plan?store_id=AUH-001"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert destination_response.status_code == 200
+    destination_result = destination_response.json()
+    transfer = next(
+        action
+        for action in destination_result["actions"]
+        if action["action_type"] == "store_transfer"
+    )
+
+    assert destination_result["actions_count"] == 2
+    assert transfer["store_id"] == "DXB-001"
+    assert transfer["from_store_id"] == "AUH-001"
+    assert transfer["couriers"] == 3
+
+    assert donor_response.status_code == 200
+    donor_result = donor_response.json()
+
+    assert donor_result["actions_count"] == 1
+    assert donor_result["actions"][0]["action_type"] == "store_transfer"
+    assert donor_result["actions"][0]["from_store_id"] == "AUH-001"
+
+
 def test_decision_plan_returns_404_for_unknown_run():
     app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
 
