@@ -6,6 +6,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.ml.future_forecast import FutureDemandPredictionResult
 
 client = TestClient(app)
 
@@ -218,6 +219,74 @@ def test_calculates_plan_from_official_workbook(monkeypatch):
     assert saved["target_utilization"] == 1.0
     assert saved["model_version"] == "catboost-daily-residual-v1"
     assert len(saved["normalized_data"]) == 1
+
+
+def test_calculates_90_day_future_plan_from_official_workbook(monkeypatch):
+    saved = {}
+
+    def fake_save_planning_result(*args, **kwargs):
+        saved.update(kwargs)
+        return SimpleNamespace(id=31), SimpleNamespace(id=41)
+
+    def fake_forecast_future_demand(history, *, horizon_start):
+        dates = pd.date_range(horizon_start, periods=90)
+        dataframe = pd.DataFrame(
+            {
+                "store_id": "QED_DXB_01",
+                "date": dates,
+                "time_bucket": dates,
+                "forecast_shipments": 24.0,
+                "baseline_forecast_shipments": 24.0,
+                "predicted_shipments": 25.0,
+                "prediction_correction": 1.0,
+                "prediction_source": "catboost_future",
+                "model_version": "catboost-daily-future-v1",
+            }
+        )
+        return FutureDemandPredictionResult(
+            dataframe=dataframe,
+            prediction_source="catboost_future",
+            model_version="catboost-daily-future-v1",
+            fallback_reason=None,
+            historical_date_to="2026-05-01",
+            horizon_start="2026-05-02",
+            horizon_end="2026-07-30",
+        )
+
+    monkeypatch.setattr(
+        "app.api.planning.save_planning_result",
+        fake_save_planning_result,
+    )
+    monkeypatch.setattr(
+        "app.api.planning.forecast_future_demand",
+        fake_forecast_future_demand,
+    )
+
+    response = client.post(
+        "/api/planning/calculate?planning_date=2026-05-02",
+        files={
+            "file": (
+                "official.xlsx",
+                build_official_workbook(),
+                EXCEL_CONTENT_TYPE,
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    assert result["forecast_mode"] == "future_90_days"
+    assert result["prediction_source"] == "catboost_future"
+    assert result["model_version"] == "catboost-daily-future-v1"
+    assert result["historical_date_to"] == "2026-05-01"
+    assert result["horizon_start"] == "2026-05-02"
+    assert result["horizon_end"] == "2026-07-30"
+    assert result["row_count"] == 90
+    assert result["plan"][0]["date"] == "2026-05-02"
+    assert result["plan"][-1]["date"] == "2026-07-30"
+    assert "actual_shipments" not in result["plan"][0]
+    assert len(saved["normalized_data"]) == 90
 
 
 def test_rejects_invalid_official_workbook():

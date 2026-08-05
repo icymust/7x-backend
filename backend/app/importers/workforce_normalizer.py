@@ -302,6 +302,80 @@ def _build_daily_capacity_rows(
     return daily_rows
 
 
+def build_future_daily_capacity_rows(
+    workbook: WorkforceWorkbook,
+    future_demand: pd.DataFrame,
+) -> pd.DataFrame:
+    daily_rows = future_demand.copy()
+    metadata = workbook.store_metadata.copy()
+    courier_roster = workbook.courier_roster.copy()
+
+    daily_rows["store_id"] = daily_rows["store_id"].astype(str).str.strip()
+    daily_rows["date"] = pd.to_datetime(daily_rows["date"]).dt.normalize()
+    metadata["store_id"] = metadata["store_id"].astype(str).str.strip()
+
+    for column in [
+        "store_id",
+        "employment_type",
+        "weekly_off_day",
+        "status",
+    ]:
+        courier_roster[column] = courier_roster[column].astype(str).str.strip()
+
+    metadata_columns = [
+        "store_id",
+        "store_name",
+        "emirate",
+        "zone",
+        "latitude",
+        "longitude",
+        "target_utilization_percent",
+        "base_productivity_per_hour",
+    ]
+    metadata_columns = [
+        column for column in metadata_columns if column in metadata.columns
+    ]
+    duplicate_metadata_columns = [
+        column
+        for column in metadata_columns
+        if column != "store_id" and column in daily_rows.columns
+    ]
+
+    if duplicate_metadata_columns:
+        daily_rows = daily_rows.drop(columns=duplicate_metadata_columns)
+
+    daily_rows = daily_rows.merge(
+        metadata[metadata_columns],
+        on="store_id",
+        how="left",
+        validate="many_to_one",
+    )
+    daily_rows["time_bucket"] = daily_rows["date"]
+    daily_rows["day_name"] = daily_rows["date"].dt.day_name()
+    daily_rows["is_weekend"] = daily_rows["day_name"].isin(
+        {"Friday", "Saturday"}
+    )
+    daily_rows["week_number"] = daily_rows["date"].dt.isocalendar().week.astype(
+        int
+    )
+    daily_rows["planning_grain"] = "store_day"
+    daily_rows["deliveries_per_courier_hour"] = DELIVERIES_PER_COURIER_HOUR
+    daily_rows["average_working_hours_per_courier"] = (
+        AVERAGE_WORKING_HOURS_PER_COURIER
+    )
+    daily_rows["productivity_per_courier"] = (
+        AVERAGE_DELIVERIES_PER_COURIER_DAY
+    )
+    daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
+
+    _add_daily_courier_availability(daily_rows, courier_roster)
+
+    return daily_rows.sort_values(
+        ["date", "store_id"],
+        ignore_index=True,
+    )
+
+
 def normalize_workforce_workbook(
     workbook: WorkforceWorkbook,
 ) -> WorkforceNormalizationResult:

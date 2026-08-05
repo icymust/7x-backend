@@ -233,6 +233,16 @@ def _build_action(
         _parse_date(plan_row["time_bucket"])
         for plan_row in sorted_rows
     ]
+    covered_shortage_days = len(set(shortage_dates))
+    covered_shortage_weeks = len(
+        {
+            (
+                shortage_date.isocalendar().year,
+                shortage_date.isocalendar().week,
+            )
+            for shortage_date in shortage_dates
+        }
+    )
     date_from = min(shortage_dates).isoformat()
     date_to = max(shortage_dates).isoformat()
 
@@ -257,8 +267,10 @@ def _build_action(
         "priority": priority,
         "reason": reason,
         "decision_basis": {
-            "shortage_days": shortage_days,
-            "shortage_weeks": shortage_weeks,
+            "covered_shortage_days": covered_shortage_days,
+            "covered_shortage_weeks": covered_shortage_weeks,
+            "persistent_shortage_days_total": shortage_days,
+            "persistent_shortage_weeks_total": shortage_weeks,
         },
         "evidence": _build_action_evidence(sorted_rows),
         "covered_time_buckets": [

@@ -85,6 +85,12 @@ def test_returns_explanation_from_ollama(monkeypatch):
     assert "Output exactly four concise bullet points" in (
         captured_request["body"]["messages"][0]["content"]
     )
+    assert "total for the covered" in (
+        captured_request["body"]["messages"][0]["content"]
+    )
+    assert "peak_gap date" in (
+        captured_request["body"]["messages"][0]["content"]
+    )
     user_content = captured_request["body"]["messages"][1]["content"]
 
     assert '"selected_action"' in user_content

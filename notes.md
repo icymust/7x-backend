@@ -89,7 +89,7 @@ Docker Compose запускается из корня repository.
                                 |
                                 v
                      CatBoost Demand Forecast
-             Excel baseline + learned residual correction
+          historical correction or 90-day future forecast
                                 |
                                 v
                          Capacity Engine
@@ -142,15 +142,17 @@ Docker Compose запускается из корня repository.
 
 Current decision flow:
 
-Historical actual demand → CatBoost correction → Predicted Demand
+Historical actual demand → CatBoost future forecast → Predicted Demand
 Predicted Demand + Current Workforce → Workforce Gap
 Workforce Gap → Rolling Decision Plan → Ollama explanation
 ```
 
 Backend является источником точных значений: количества курьеров, сроков,
-приоритетов и кодов причин. CatBoost корректирует `forecast_volume` из Excel,
-после чего Capacity Engine рассчитывает workforce gap. Если модель недоступна,
-используется исходный Excel forecast. Отдельного Workforce Optimizer сейчас
+приоритетов и кодов причин. Для historical flow CatBoost корректирует
+`forecast_volume` из Excel. Для даты после конца истории отдельная модель
+строит 90 будущих store-days на основе недельного baseline и прошлых demand.
+После этого Capacity Engine рассчитывает workforce gap. Если модель недоступна,
+используется соответствующий baseline. Отдельного Workforce Optimizer сейчас
 нет: соотношение 60/40 является правилом Recommendation Engine. OR-Tools будет
 добавлен только после появления подтверждённых ограничений и стоимости.
 Explanation Context Builder собирает capacity, recommendations, daily summary,
@@ -162,7 +164,8 @@ notifications и rolling decision actions. Ollama только объясняе�
 1. Пользователь загружает Excel с forecast, workforce и leave.
 2. Backend читает файл, сопоставляет колонки и валидирует значения.
 3. CatBoost корректирует `forecast_volume` по историческим `actual_volume`,
-   store и временным признакам; Excel forecast остаётся fallback.
+   store и временным признакам. Если `planning_date` позже истории, backend
+   формирует 90 новых дней; weekly seasonal forecast остаётся fallback.
 4. Capacity Engine рассчитывает required, effective available, shortage и
    surplus по каждому store/time bucket.
 5. Decision Engine формирует только выполнимые варианты действий: transfer,
@@ -552,6 +555,30 @@ prediction_source = catboost
 равным Excel forecast, а `prediction_source` — `excel_baseline`. Повторное
 обучение при загрузке Excel не запускается.
 
+### Future forecast на 90 дней
+
+Если `planning_date` позже `2026-07-27`, official `/calculate` создаёт ровно 90
+будущих дней для каждого магазина. Например, для `planning_date=2026-08-05`
+результат содержит 900 строк: 10 stores × 90 дней, период до `2026-11-02`.
+
+Future baseline повторяет последний доступный недельный паттерн исходного Excel
+forecast. `catboost-daily-future-v1` прогнозирует поправку к этому baseline по
+store, emirate, zone, calendar и leakage-safe lag/rolling demand features.
+Пропущенные дни между концом истории и `planning_date` рассчитываются
+рекурсивно, но в API возвращается только выбранный 90-дневный горизонт.
+
+Честный recursive backtest на последних 19 днях:
+
+```text
+Seasonal baseline: MAE 8.3526, WAPE 2.6060%
+Future CatBoost:   MAE 8.1900, WAPE 2.5552%
+WAPE improvement: 0.0508 percentage points
+```
+
+Будущие строки не содержат `actual_shipments`: фактический спрос на них ещё не
+известен. Availability экстраполируется из текущего roster, weekly off и
+статуса leave. Это MVP-допущение, поскольку даты отпусков в Dataset отсутствуют.
+
 ## Что уже сделано в backend
 
 - FastAPI-приложение со Swagger и endpoint `/health`.
@@ -566,8 +593,13 @@ prediction_source = catboost
   основной daily plan: FTE/FTC, 8/10 рабочих часов, weekly off и leave.
 - CatBoost daily demand model обучена и проверена относительно Excel baseline.
 - CatBoost подключена к official `/calculate` с безопасным Excel fallback.
+- Future CatBoost формирует 90 новых дней после конца Excel с безопасным
+  seasonal fallback.
 - Rolling actions содержат проверяемый `evidence`: baseline/ML demand,
   model source, peak required/available и shortage до действия.
+- `decision_basis` отдельно показывает длительность конкретного action и
+  длительность полного persistent shortage, чтобы outsourcing bridge не
+  выглядел как действие на весь долгосрочный период.
 - Горизонт `one_week_to_one_month` однозначно означает дни `4–29`, а не
   фиксированную недельную длительность action.
 - Каждое rolling action имеет стабильный `action_id`; frontend передаёт его в
@@ -639,4 +671,4 @@ prediction_source = catboost
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 110 тестов проходят.
+- Автоматические тесты pytest: 114 тестов проходят.

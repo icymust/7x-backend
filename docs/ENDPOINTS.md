@@ -29,7 +29,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | Method | Endpoint | Параметры | Что делает |
 |---|---|---|---|
 | `POST` | `/api/datasets/preview` | Multipart: `file` (`.xlsx`) | Распознаёт legacy или официальный multi-sheet Excel, валидирует его и возвращает mapping, количество строк и preview. Файл не сохраняется. |
-| `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` для legacy Excel, default `0.85`; `planning_date` optional | Валидирует Excel. Для официального файла агрегирует заказы и workforce по магазину и дню, рассчитывает plan и calendar, сохраняет Dataset и Planning Run. |
+| `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` для legacy Excel, default `0.85`; `planning_date` optional | Валидирует Excel. Для официального файла возвращает historical calculation либо 90-дневный future forecast, рассчитывает workforce plan и сохраняет Planning Run. |
 | `GET` | `/api/planning-runs` | Query: `limit` от `1` до `100`, default `20`; `offset` от `0` | Возвращает `total` и Planning Runs от нового к старому. |
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
@@ -74,10 +74,15 @@ Excel.
 Official response дополнительно содержит:
 
 - `dataset_type: workforce_multi_sheet`;
-- `model_version: catboost-daily-residual-v1` when the model is available;
+- `forecast_mode`: `historical_workbook` или `future_90_days`;
+- `model_version`: `catboost-daily-residual-v1` для исторических дат либо
+  `catboost-daily-future-v1` для будущих;
 - `planning_grain: store_day`;
-- `prediction_source: catboost` or `excel_baseline` fallback;
+- `prediction_source`: `catboost`, `catboost_future` или соответствующий
+  baseline fallback;
 - `prediction_fallback_reason` — `null` on successful CatBoost inference;
+- `historical_date_to` — последняя дата исходной истории;
+- `horizon_start` и `horizon_end` для future mode;
 - normalization `assumptions` и `validation_warnings`;
 - `store_name`, `emirate` и `zone` в каждой plan row;
 - дневные `required_courier_hours`, `available_courier_hours` и
@@ -85,6 +90,16 @@ Official response дополнительно содержит:
 - `baseline_forecast_shipments`, `predicted_shipments` и
   `planning_demand_shipments` в каждой plan row;
 - Friday/Saturday weekend metadata из Dataset.
+
+Если `planning_date` позже последней даты истории, endpoint создаёт по 90 новых
+дней для каждого магазина. Недельное продолжение Excel forecast служит
+baseline, а отдельная CatBoost-модель корректирует его по store, calendar и
+прошлым значениям demand. Для исходных 10 магазинов response содержит 900
+`plan` rows. Будущие строки не содержат `actual_shipments`.
+
+Если `planning_date` не передан, используется текущая дата сервера. Если она
+находится внутри периода Excel, сохраняется прежний historical flow. Если
+future CatBoost недоступна, используется `seasonal_naive` без остановки API.
 
 Блокирующая проблема одного из трёх листов возвращает `422`. Warnings не
 останавливают расчёт. Нормализованные данные сохраняются в `Dataset`, а полный
@@ -188,8 +203,10 @@ Shortage считается `persistent`, если присутствует ми
   "priority": "medium",
   "reason": "persistent_shortage_requires_permanent_hiring",
   "decision_basis": {
-    "shortage_days": 5,
-    "shortage_weeks": 2
+    "covered_shortage_days": 5,
+    "covered_shortage_weeks": 2,
+    "persistent_shortage_days_total": 5,
+    "persistent_shortage_weeks_total": 2
   },
   "evidence": {
     "prediction_source": "catboost",
@@ -210,6 +227,11 @@ Shortage считается `persistent`, если присутствует ми
   ]
 }
 ```
+
+`covered_shortage_*` описывает только период конкретного action.
+`persistent_shortage_*_total` описывает полный устойчивый дефицит, на основании
+которого Decision Engine выбрал persistent strategy. Для outsourcing bridge эти
+значения могут различаться.
 
 `store_transfer` имеет `status: active_rule_based`, использует только свободный
 surplus и требует подтверждения менеджера. Store того же emirate получает
@@ -262,6 +284,8 @@ Frontend получает `action_id` из
 пунктах и не перечисляет пустые горизонты. В LLM отправляется только
 `selected_action` с его backend evidence; полный context остаётся в HTTP
 response для frontend, но не используется моделью при объяснении карточки.
+`predicted_orders_total` объясняется как сумма за покрываемый период, а
+required/available/shortage — как значения дня `peak_gap`.
 
 Магазин за период:
 

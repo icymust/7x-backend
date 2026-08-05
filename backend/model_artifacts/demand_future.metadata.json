@@ -1,0 +1,19 @@
+{
+  "model_version": "catboost-daily-future-v1",
+  "planning_grain": "store_day",
+  "training_method": "recursive_seasonal_baseline_catboost_residual",
+  "training_rows": 900,
+  "stores": 10,
+  "history_date_from": "2026-04-28",
+  "history_date_to": "2026-07-27",
+  "validation": {
+    "train_date_to": "2026-07-08",
+    "test_date_from": "2026-07-09",
+    "test_rows": 190,
+    "seasonal_baseline_wape_percent": 2.606,
+    "catboost_wape_percent": 2.5552,
+    "wape_improvement_points": 0.0508
+  },
+  "correction_weight": 0.25,
+  "default_horizon_days": 90
+}

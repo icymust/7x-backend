@@ -174,7 +174,12 @@ def test_builds_permanent_hiring_for_five_shortage_days():
     assert action["action_type"] == "permanent_hiring"
     assert action["couriers"] == 6
     assert action["deadline"] == "2026-08-06"
-    assert action["decision_basis"]["shortage_days"] == 5
+    assert action["decision_basis"] == {
+        "covered_shortage_days": 5,
+        "covered_shortage_weeks": 1,
+        "persistent_shortage_days_total": 5,
+        "persistent_shortage_weeks_total": 1,
+    }
 
 
 def test_bridges_persistent_shortage_until_permanent_is_available():
@@ -204,7 +209,12 @@ def test_bridges_persistent_shortage_until_permanent_is_available():
     assert permanent_action["shortage_type"] == "persistent"
     assert permanent_action["action_type"] == "permanent_hiring"
     assert permanent_action["deadline"] == "2026-08-02"
-    assert permanent_action["decision_basis"]["shortage_weeks"] == 3
+    assert permanent_action["decision_basis"] == {
+        "covered_shortage_days": 2,
+        "covered_shortage_weeks": 2,
+        "persistent_shortage_days_total": 3,
+        "persistent_shortage_weeks_total": 3,
+    }
     assert permanent_action["covered_time_buckets"] == [
         "2026-10-01T09:00:00",
         "2026-10-12T09:00:00",
