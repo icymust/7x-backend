@@ -49,72 +49,82 @@ alembic upgrade head
 ## Архитектура системы
 
 ```text
-                    Excel от 7X
-        demand forecast + workforce + leave
-                            |
-                            v
-              Import → Mapping → Validation
-                            |
-                            v
-               Канонические данные backend
-                            |
-              ┌─────────────┴─────────────┐
-              |                           |
-              v                           v
-   Исторические actual data       Demand и workforce data
-              |                           |
-              v                           |
-   ML Productivity Estimator              |
-   planned; baseline from Excel           |
-              |                           |
-              └─────────────┬─────────────┘
-                            v
-                     Capacity Engine
-           required / available / shortage / surplus
-                            |
-                            v
-          Workforce Optimization Engine
-          planned: Google OR-Tools + cost
-          current fallback: rule-based 60/40
-                            |
-                            v
-                Recommendation Engine
-          count / deadline / priority / reason
-                            |
-                            v
-              Daily Summary + Calendar
-              month / day / date range
-                            |
-                            v
-                    Planning Result
-       capacity + optimization + recommendations
-              + daily summary + notifications
-                            |
-              ┌─────────────┴─────────────┐
-              |                           |
-              v                           v
-      Структурированные данные   Explanation Context Builder
-                                          |
-                                          v
-                                 Опциональный Ollama LLM
-                                 только объясняет результат
-              |                           |
-              └─────────────┬─────────────┘
-                            v
-                       FastAPI API
-                            |
-                            v
-                         Frontend
+                         Excel от 7X
+             demand forecast + workforce + leave
+                                |
+                                v
+                  Import → Mapping → Validation
+                                |
+                                v
+                   Канонические данные backend
+                                |
+                                v
+                         Capacity Engine
+            required / available / shortage / surplus
+                                |
+                                v
+                     Recommendation Engine
+            current: rule-based permanent/outsourced 60/40
+               count / deadline / priority / reason
+                                |
+                                v
+                    Daily Summary + Calendar
+                                |
+                                v
+                         Planning Result
+              detailed plan + recommendations + calendar
+                                |
+                                v
+                       PostgreSQL Persistence
+               Dataset + immutable PlanningRun versions
+                                |
+               ┌────────────────┼────────────────┐
+               |                |                |
+               v                v                v
+       Planning Run API   Derived API Engines   Comparison Engine
+       details / stores   KPI / notifications   current vs baseline
+       calendar / recs    90-day decision plan
+               |                |                |
+               └────────────────┼────────────────┘
+                                |
+                  ┌─────────────┴─────────────┐
+                  |                           |
+                  v                           v
+          Structured JSON          Explanation Context Builder
+                                              |
+                                              v
+                                     Optional Ollama LLM
+                                     human-friendly text
+                                              |
+                                      unavailable / disabled
+                                              |
+                                      structured fallback
+                  |                           |
+                  └─────────────┬─────────────┘
+                                v
+                           FastAPI API
+                                |
+                                v
+                             Frontend
+
+Planned extensions after integration of the official dataset:
+
+Historical forecast + actual volume → ML Forecast Corrector → Capacity Engine
+Official costs and constraints → OR-Tools Workforce Optimizer → Recommendations
 ```
 
 Backend является источником точных значений: количества курьеров, сроков,
 приоритетов и кодов причин. Пока ML-модель не подключена, Capacity Engine
-использует `productivity_per_courier` из Excel как baseline. После получения
-исторических данных ML будет предсказывать это значение. Explanation Context
-Builder собирает для выбранного дня или периода capacity, optimization,
-recommendations, daily summary и notifications. Опциональный Ollama LLM
-может только превратить этот готовый контекст в понятный человеку текст и не
-участвует в расчётах.
+использует `forecast_volume` и DPH из Excel как baseline. Официальный Dataset
+содержит `actual_volume`, поэтому после корректного importer можно провести
+time-based backtest модели, которая корректирует forecast или прогнозирует
+required couriers. Отдельного Workforce Optimizer сейчас нет: соотношение
+60/40 является правилом Recommendation Engine. OR-Tools будет добавлен только
+после появления подтверждённых ограничений и стоимости. Explanation Context
+Builder собирает для выбранного дня или периода capacity, optimization status,
+recommendations, daily summary и notifications. Опциональный Ollama LLM может
+только превратить готовый контекст в понятный человеку текст и не участвует в
+расчётах.
 
 ## Основной flow
 
@@ -138,12 +148,97 @@ recommendations, daily summary и notifications. Опциональный Ollama
    недоступности LLM возвращается структурированный fallback.
 11. FastAPI отдаёт frontend подробный plan, calendar summary и explanations.
 
+## Официальный Dataset
+
+Файл содержит четыре листа:
+
+- `README` — описание задания и glossary;
+- `Store_Metadata` — 10 stores, location, emirate и store-level DPH;
+- `Demand_Forecast` — 43 680 строк за 13 недель с шагом 30 минут;
+- `Courier_Roster` — 67 couriers с типом FTE/FTC, сменой, выходным и status.
+
+Grain листа demand: `store_id + date + time_slot`. Период данных:
+`2026-04-28` — `2026-07-27`. Официальный файл задания содержит синтетические,
+а не реальные operational data.
+
+### Подтверждённое хорошее качество
+
+- Нет null values, пустых обязательных значений и полных дубликатов.
+- Ключ `store_id + date + time_slot` уникален.
+- Для каждого store присутствуют все 91 день и 48 получасовых slots в день.
+- Все store IDs из demand и roster находятся в `Store_Metadata`.
+- `forecast_error` всегда равен `actual_volume - forecast_volume`.
+- `day_name` соответствует `date`, а `is_weekend` последовательно означает
+  Friday/Saturday.
+- Workforce mix близок к целевому 60/40: 41 FTE и 26 FTC.
+- `actual_volume` позволяет выполнить честный time-based backtest.
+- `emirate`, `latitude` и `longitude` позволяют агрегировать KPI и в будущем
+  искать кандидатов для transfer.
+
+### Несоответствия README и фактического файла
+
+- README говорит о stores в Dubai, Abu Dhabi, Sharjah, Ajman и RAK, но в
+  `Store_Metadata` присутствуют только Dubai, Abu Dhabi и Sharjah.
+- README описывает `max_capacity`, но такой колонки ни в одном листе нет.
+- README описывает `target_utilisation_pct` как процент, но фактические
+  значения равны 16–20 и не похожи на допустимый utilisation percentage.
+- README упоминает courier-level `dph` и `avg_delivery_min`, но roster содержит
+  только `avg_delivery_hr`; значение равно 2 у всех 67 couriers, хотя README
+  говорит об индивидуальной производительности.
+- `base_dph` магазина `QED_DXB_02` равен 9.0, тогда как остальные stores имеют
+  значения 1.8–2.8. Это сильный outlier, который нельзя молча исправлять.
+- У 16 couriers поле `working_hours` больше интервала между `shift_start` и
+  `shift_end`; источник истины для длительности смены не определён.
+- Status `On Leave` есть у 6 couriers, но отсутствуют `leave_from` и
+  `leave_to`, поэтому неизвестен точный период недоступности.
+- DPH задан за один час, а demand — за 30 минут. Capacity одного courier на
+  slot должен учитывать множитель `0.5` часа.
+- В Dataset нет labour cost, overtime limits, transfer limits, фактического
+  on-time delivery и store closures. Соответствующие KPI и cost optimization
+  нельзя честно вычислить.
+- Координаты stores присутствуют, но нет допустимого travel time, transfer
+  capacity и правил совместимости смен. Одних координат недостаточно для
+  автоматического transfer.
+- `actual_volume` и `forecast_error` являются target/evaluation data. Их нельзя
+  передавать ML-модели как признаки для той же строки, иначе возникнет data
+  leakage.
+- Dataset использует Friday/Saturday как weekend, а текущий legacy calendar
+  backend использует Saturday/Sunday и должен быть адаптирован.
+
+До уточнения неоднозначные значения сохраняются без исправления. Любое временное
+правило должно быть явно отмечено в API как assumption.
+
+## Mapping официального Dataset
+
+Старый `app/importers/column_mapper.py` остаётся для legacy плоского Excel,
+который принимает текущий `/preview` и `/calculate`. Он ожидает, что forecast,
+availability и productivity находятся на одном листе.
+
+Новый `app/importers/workforce_mapper.py` предназначен для официального
+multi-sheet файла. Он:
+
+- распознаёт `Store_Metadata`, `Demand_Forecast` и `Courier_Roster`;
+- игнорирует информационный лист `README`;
+- переводит исходные названия в canonical backend names;
+- разделяет core-поля для расчёта и дополнительные поля для ML/evaluation;
+- сообщает о пропущенных рабочих листах и обязательных колонках.
+
+`app/importers/workforce_loader.py` читает workbook целиком, применяет mapping и
+возвращает три нормализованных DataFrame: `store_metadata`, `demand_forecast` и
+`courier_roster`. Loader проверяет, что Excel читается, обязательные листы и
+core-колонки существуют, а mapping не создаёт повторяющиеся canonical columns.
+
+Loader пока не объединяет листы, не рассчитывает capacity и не подключён к API.
+Проверка null values, ключей, допустимых статусов, shift consistency и
+cross-sheet integrity будет выполнена отдельным workforce validator.
+
 ## Что уже сделано в backend
 
 - FastAPI-приложение со Swagger и endpoint `/health`.
 - Health endpoints для PostgreSQL и опциональной Ollama-модели.
 - Загрузка `.xlsx` и preview листов, колонок и первых строк.
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
+- Mapping и multi-sheet loader официального workforce Dataset.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -203,4 +298,4 @@ recommendations, daily summary и notifications. Опциональный Ollama
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 72 теста проходят.
+- Автоматические тесты pytest: 80 тестов проходят.
