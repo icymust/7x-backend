@@ -112,7 +112,7 @@ def test_builds_half_hour_capacity_rows_with_store_metadata():
     assert len(result.capacity_rows) == 4
     assert first_row["time_bucket"] == pd.Timestamp("2026-04-28 08:00:00")
     assert first_row["time_bucket_hours"] == 0.5
-    assert first_row["productivity_per_courier"] == pytest.approx(1.0)
+    assert first_row["productivity_per_courier"] == pytest.approx(1.2)
     assert first_row["target_utilization"] == 1.0
     assert first_row["store_name"] == "Al Quoz Dark Store"
     assert first_row["emirate"] == "Dubai"
@@ -130,7 +130,8 @@ def test_builds_daily_capacity_rows_without_counting_shift_slots():
     assert tuesday["forecast_shipments"] == 6
     assert tuesday["actual_shipments"] == 7
     assert tuesday["planning_grain"] == "store_day"
-    assert tuesday["productivity_per_courier"] == pytest.approx(17.6)
+    assert tuesday["deliveries_per_courier_hour"] == pytest.approx(2.4)
+    assert tuesday["productivity_per_courier"] == pytest.approx(21.12)
     assert tuesday["available_permanent"] == 2
     assert tuesday["permanent_unavailable"] == 1
     assert tuesday["available_outsourced"] == 1
@@ -176,7 +177,7 @@ def test_derives_friday_saturday_weekend_and_reports_assumptions():
         "shift_end_is_exclusive",
         "on_leave_applies_to_full_horizon",
         "break_schedule_is_missing",
-        "recruiter_productivity_rule",
+        "store_base_productivity_rule",
         "official_target_utilization_is_one",
         "daily_planning_grain",
         "daily_target_mix_average",
