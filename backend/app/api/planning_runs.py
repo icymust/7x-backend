@@ -18,6 +18,35 @@ router = APIRouter(
 )
 
 
+def _store_month_status(plan: list[dict]) -> str:
+    severities = {
+        day["severity"]
+        for day in build_daily_summaries(plan)
+    }
+
+    if "critical" in severities:
+        return "critical"
+
+    if severities & {"high", "warning"}:
+        return "shortage"
+
+    if "surplus" in severities:
+        return "surplus"
+
+    return "balanced"
+
+
+def _month_bounds(month: str) -> tuple[date, date]:
+    month_start = datetime.strptime(month, "%Y-%m").date().replace(day=1)
+
+    if month_start.month == 12:
+        next_month = date(month_start.year + 1, 1, 1)
+    else:
+        next_month = date(month_start.year, month_start.month + 1, 1)
+
+    return month_start, next_month
+
+
 @router.get("")
 def list_planning_runs(
     limit: int = Query(20, ge=1, le=100),
@@ -90,6 +119,10 @@ def get_planning_run(
 @router.get("/{planning_run_id}/stores")
 def get_planning_run_stores(
     planning_run_id: int,
+    month: str | None = Query(
+        None,
+        pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+    ),
     db: Session = Depends(get_db),
 ):
     planning_run = db.get(PlanningRun, planning_run_id)
@@ -102,17 +135,59 @@ def get_planning_run_stores(
 
     plan = planning_run.result.get("plan", [])
 
-    stores = sorted(
-        {
-            str(plan_row["store_id"])
+    if month:
+        try:
+            month_start, next_month = _month_bounds(month)
+        except (OverflowError, ValueError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid month",
+            ) from error
+
+        plan = [
+            plan_row
             for plan_row in plan
-            if plan_row.get("store_id") is not None
-        }
-    )
+            if month_start
+            <= datetime.fromisoformat(plan_row["time_bucket"]).date()
+            < next_month
+        ]
+
+        if not plan:
+            raise HTTPException(
+                status_code=422,
+                detail="No planning data for requested month",
+            )
+
+    rows_by_store: dict[str, list[dict]] = {}
+
+    for plan_row in plan:
+        if plan_row.get("store_id") is None:
+            continue
+
+        store_id = str(plan_row["store_id"])
+        rows_by_store.setdefault(store_id, []).append(plan_row)
+
+    stores = []
+
+    for store_id, store_rows in sorted(rows_by_store.items()):
+        metadata = store_rows[0]
+        latitude = metadata.get("latitude")
+        longitude = metadata.get("longitude")
+
+        stores.append(
+            {
+                "store_id": store_id,
+                "store_name": metadata.get("store_name"),
+                "lat": float(latitude) if latitude is not None else None,
+                "lng": float(longitude) if longitude is not None else None,
+                "status": _store_month_status(store_rows),
+            }
+        )
 
     return {
         "planning_run_id": planning_run.id,
         "dataset_id": planning_run.dataset_id,
+        "month": month,
         "store_count": len(stores),
         "stores": stores,
     }

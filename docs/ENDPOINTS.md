@@ -15,8 +15,8 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 2. Если `items` пустой — показать загрузку Excel.
 3. Если расчёт есть — взять `planning_run_id` и вызвать
    `GET /api/planning-runs/{planning_run_id}`.
-4. Для dropdown магазина вызвать
-   `GET /api/planning-runs/{planning_run_id}/stores`.
+4. Для карты и списка складов вызвать
+   `GET /api/planning-runs/{planning_run_id}/stores?month=YYYY-MM`.
 5. Перед расчётом можно проверить Excel через
    `POST /api/datasets/preview`.
 6. Для расчёта и сохранения вызвать `POST /api/planning/calculate`.
@@ -32,7 +32,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` для legacy Excel, default `0.85`; `planning_date` optional | Валидирует Excel. Для официального файла возвращает historical calculation либо 90-дневный future forecast, рассчитывает workforce plan и сохраняет Planning Run. |
 | `GET` | `/api/planning-runs` | Query: `limit` от `1` до `100`, default `20`; `offset` от `0` | Возвращает `total` и Planning Runs от нового к старому. |
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
-| `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
+| `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id`; optional Query: `month` в формате `YYYY-MM` | Возвращает warehouses с `store_id`, названием, `lat`, `lng` и status за выбранный месяц. |
 | `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
 | `GET` | `/api/planning-runs/{planning_run_id}/decision-plan` | Path: `planning_run_id`; optional Query: `store_id` | Строит rolling workforce plan на 90 дней. С `store_id` возвращает actions, где выбранный склад получает решение или является источником transfer. |
 | `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с UAE calendar metadata, severity, coverage, required/available, shortage/surplus и recommendations count. |
@@ -113,6 +113,37 @@ future CatBoost недоступна, используется `seasonal_naive` 
 - Backend возвращает смысловой `severity`. Цвет для него выбирает frontend.
 - В compare отрицательный `shortage_courier_slots` в `delta` означает, что дефицит
   уменьшился.
+
+## Warehouse map
+
+Для выбранного месяца frontend вызывает:
+
+```text
+GET /api/planning-runs/1/stores?month=2026-08
+```
+
+Каждый элемент `stores` содержит:
+
+```json
+{
+  "store_id": "QED_DXB_01",
+  "store_name": "Al Quoz Dark Store",
+  "lat": 25.13,
+  "lng": 55.23,
+  "status": "critical"
+}
+```
+
+Статус рассчитывается по всем дням выбранного месяца:
+
+- `critical` — есть хотя бы один critical shortage day;
+- `shortage` — есть shortage, но нет critical дня;
+- `surplus` — shortage отсутствует, но есть surplus;
+- `balanced` — нет shortage и surplus.
+
+Приоритет статусов: `critical` → `shortage` → `surplus` → `balanced`. Поэтому
+surplus другого дня не скрывает дефицит. Без `month` статус считается по всему
+Planning Run. Для месяца без planning data endpoint возвращает `422`.
 
 ## Фильтры
 

@@ -644,7 +644,7 @@ WAPE improvement: 0.0508 percentage points
 - API чтения сохранённых результатов:
   - список Planning Runs с `total`, `limit` и `offset`;
   - полный Planning Run по ID;
-  - список уникальных магазинов для frontend dropdown;
+  - warehouses с координатами и месячным operational status;
   - operational KPI для dashboard;
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
@@ -674,4 +674,4 @@ WAPE improvement: 0.0508 percentage points
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 116 тестов проходят.
+- Автоматические тесты pytest: 118 тестов проходят.

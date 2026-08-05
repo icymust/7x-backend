@@ -675,9 +675,50 @@ def test_gets_planning_run_stores():
         dataset_id=1,
         result={
             "plan": [
-                {"store_id": "DXB-002"},
-                {"store_id": "DXB-001"},
-                {"store_id": "DXB-001"},
+                {
+                    "store_id": "DXB-001",
+                    "store_name": "Dubai Store",
+                    "latitude": 25.20,
+                    "longitude": 55.27,
+                    "time_bucket": "2026-08-01T00:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 7,
+                    "shortage": 3,
+                    "surplus": 0,
+                },
+                {
+                    "store_id": "AUH-001",
+                    "store_name": "Abu Dhabi Store",
+                    "latitude": 24.45,
+                    "longitude": 54.37,
+                    "time_bucket": "2026-08-01T00:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 9,
+                    "shortage": 1,
+                    "surplus": 0,
+                },
+                {
+                    "store_id": "SHJ-001",
+                    "store_name": "Sharjah Store",
+                    "latitude": 25.35,
+                    "longitude": 55.42,
+                    "time_bucket": "2026-08-01T00:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 12,
+                    "shortage": 0,
+                    "surplus": 2,
+                },
+                {
+                    "store_id": "RAK-001",
+                    "store_name": "RAK Store",
+                    "latitude": 25.79,
+                    "longitude": 55.94,
+                    "time_bucket": "2026-08-01T00:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 10,
+                    "shortage": 0,
+                    "surplus": 0,
+                },
             ]
         },
     )
@@ -685,7 +726,7 @@ def test_gets_planning_run_stores():
     app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
 
     try:
-        response = client.get("/api/planning-runs/5/stores")
+        response = client.get("/api/planning-runs/5/stores?month=2026-08")
     finally:
         app.dependency_overrides.clear()
 
@@ -693,12 +734,81 @@ def test_gets_planning_run_stores():
     assert response.json() == {
         "planning_run_id": 5,
         "dataset_id": 1,
-        "store_count": 2,
+        "month": "2026-08",
+        "store_count": 4,
         "stores": [
-            "DXB-001",
-            "DXB-002",
+            {
+                "store_id": "AUH-001",
+                "store_name": "Abu Dhabi Store",
+                "lat": 24.45,
+                "lng": 54.37,
+                "status": "shortage",
+            },
+            {
+                "store_id": "DXB-001",
+                "store_name": "Dubai Store",
+                "lat": 25.2,
+                "lng": 55.27,
+                "status": "critical",
+            },
+            {
+                "store_id": "RAK-001",
+                "store_name": "RAK Store",
+                "lat": 25.79,
+                "lng": 55.94,
+                "status": "balanced",
+            },
+            {
+                "store_id": "SHJ-001",
+                "store_name": "Sharjah Store",
+                "lat": 25.35,
+                "lng": 55.42,
+                "status": "surplus",
+            },
         ],
     }
+
+
+def test_stores_reject_month_without_planning_data():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={
+            "plan": [
+                {
+                    "store_id": "DXB-001",
+                    "time_bucket": "2026-08-01T00:00:00",
+                }
+            ]
+        },
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/stores?month=2026-09"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "No planning data for requested month",
+    }
+
+
+def test_stores_reject_invalid_month_format():
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(None)
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/stores?month=2026-13"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
 
 
 def test_stores_return_404_for_unknown_run():
