@@ -88,6 +88,10 @@ Docker Compose запускается из корня repository.
        daily orders + store metadata + FTE/FTC hours
                                 |
                                 v
+                     CatBoost Demand Forecast
+             Excel baseline + learned residual correction
+                                |
+                                v
                          Capacity Engine
             required / available / shortage / surplus
                                 |
@@ -136,34 +140,29 @@ Docker Compose запускается из корня repository.
                                 v
                              Frontend
 
-Planned extensions after integration of the official dataset:
+Current decision flow:
 
-Historical actual demand → ML Forecast Model → Predicted Demand
+Historical actual demand → CatBoost correction → Predicted Demand
 Predicted Demand + Current Workforce → Workforce Gap
-Workforce Gap → Candidate Actions → Rule-based Scoring → 1–3 Recommendations
+Workforce Gap → Rolling Decision Plan → Ollama explanation
 ```
 
 Backend является источником точных значений: количества курьеров, сроков,
-приоритетов и кодов причин. Пока ML-модель не подключена, Capacity Engine
-использует `forecast_volume` из Excel как demand baseline и подтверждённую
-capacity одного courier. Официальный Dataset содержит `actual_volume`, поэтому
-после корректного importer можно провести time-based backtest модели, которая
-корректирует forecast или прогнозирует demand. Отдельного Workforce Optimizer
-сейчас нет: соотношение 60/40 является правилом Recommendation Engine. OR-Tools
-будет добавлен только
-после появления подтверждённых ограничений и стоимости. Explanation Context
-Builder собирает для выбранного дня или периода capacity, optimization status,
-recommendations, daily summary и notifications. Опциональный Ollama LLM может
-только превратить готовый контекст в понятный человеку текст и не участвует в
-расчётах.
+приоритетов и кодов причин. CatBoost корректирует `forecast_volume` из Excel,
+после чего Capacity Engine рассчитывает workforce gap. Если модель недоступна,
+используется исходный Excel forecast. Отдельного Workforce Optimizer сейчас
+нет: соотношение 60/40 является правилом Recommendation Engine. OR-Tools будет
+добавлен только после появления подтверждённых ограничений и стоимости.
+Explanation Context Builder собирает capacity, recommendations, daily summary,
+notifications и rolling decision actions. Ollama только объясняет этот готовый
+контекст и не участвует в расчётах.
 
 ## Основной flow
 
 1. Пользователь загружает Excel с forecast, workforce и leave.
 2. Backend читает файл, сопоставляет колонки и валидирует значения.
-3. До подключения ML используется `forecast_volume` из Excel. ML Forecast Model
-   позже будет прогнозировать или корректировать demand по историческим
-   `actual_volume`, store и временным признакам.
+3. CatBoost корректирует `forecast_volume` по историческим `actual_volume`,
+   store и временным признакам; Excel forecast остаётся fallback.
 4. Capacity Engine рассчитывает required, effective available, shortage и
    surplus по каждому store/time bucket.
 5. Decision Engine формирует только выполнимые варианты действий: transfer,
@@ -176,8 +175,8 @@ recommendations, daily summary и notifications. Опциональный Ollama
 9. Rolling Decision Plan агрегирует shortage в 90-дневные workforce actions,
    не создавая отдельный найм для каждого time bucket.
 10. Explanation Context Builder собирает компактный контекст выбранного дня или
-   периода из capacity, optimization, recommendations, daily summary и
-   notifications.
+   периода из capacity, recommendations, daily summary, notifications и
+   rolling decision plan.
 11. Ollama опционально превращает этот контекст в понятное HR-объяснение; при
    недоступности LLM возвращается структурированный fallback.
 12. FastAPI отдаёт frontend подробный plan, recommendation cards, calendar
@@ -567,6 +566,14 @@ prediction_source = catboost
   основной daily plan: FTE/FTC, 8/10 рабочих часов, weekly off и leave.
 - CatBoost daily demand model обучена и проверена относительно Excel baseline.
 - CatBoost подключена к official `/calculate` с безопасным Excel fallback.
+- Rolling actions содержат проверяемый `evidence`: baseline/ML demand,
+  model source, peak required/available и shortage до действия.
+- Горизонт `one_week_to_one_month` однозначно означает дни `4–29`, а не
+  фиксированную недельную длительность action.
+- Каждое rolling action имеет стабильный `action_id`; frontend передаёт его в
+  `/api/assistant/explain`, чтобы получить объяснение одной выбранной карточки.
+- Ollama получает summary всех actions и сбалансированные примеры каждого
+  горизонта; она только переводит evidence в короткое объяснение.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -632,4 +639,4 @@ prediction_source = catboost
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 105 тестов проходят.
+- Автоматические тесты pytest: 110 тестов проходят.

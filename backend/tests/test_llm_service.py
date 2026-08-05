@@ -60,7 +60,19 @@ def test_returns_explanation_from_ollama(monkeypatch):
     )
 
     result = llm_service.request_llm_explanation(
-        {"shortage": 10},
+        {
+            "scope": {"decision_action_id": "action-1"},
+            "decision_plan": {
+                "items": [
+                    {
+                        "action_id": "action-1",
+                        "store_id": "DXB-001",
+                        "action_type": "emergency_outsourcing",
+                        "couriers": 10,
+                    }
+                ]
+            },
+        },
         "en",
     )
 
@@ -70,7 +82,14 @@ def test_returns_explanation_from_ollama(monkeypatch):
     assert captured_request["body"]["model"] == "qwen2.5:7b"
     assert captured_request["body"]["stream"] is False
     assert captured_request["body"]["think"] is False
-    assert '"shortage": 10' in (captured_request["body"]["messages"][1]["content"])
+    assert "Output exactly four concise bullet points" in (
+        captured_request["body"]["messages"][0]["content"]
+    )
+    user_content = captured_request["body"]["messages"][1]["content"]
+
+    assert '"selected_action"' in user_content
+    assert '"action_id": "action-1"' in user_content
+    assert '"scope"' not in user_content
 
 
 def test_returns_none_when_ollama_is_unavailable(monkeypatch):

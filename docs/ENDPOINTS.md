@@ -39,7 +39,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
 | `GET` | `/api/planning-runs/{planning_run_id}/notifications` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает urgent shortage, upcoming shortage, hiring start required и staff surplus alerts. |
 | `GET` | `/api/planning-runs/{planning_run_id}/compare` | Path: `planning_run_id`; Query: `baseline_id` от `1` | Сравнивает current Planning Run с baseline и возвращает `delta = current - baseline`. |
-| `POST` | `/api/assistant/explain` | JSON: `planning_run_id`; optional `date_from`, `date_to`, `store_id`, `language` | Возвращает human-friendly Ollama explanation или structured fallback вместе с готовым backend context. |
+| `POST` | `/api/assistant/explain` | JSON: `planning_run_id`; optional `decision_action_id` либо `date_from`, `date_to`, `store_id`; `language` | Объясняет весь scope или одну выбранную AI Suggestion через Ollama; при ошибке LLM возвращает structured fallback. |
 | `GET` | `/health` | Нет | Проверяет, что FastAPI отвечает. |
 | `GET` | `/health/database` | Нет | Проверяет доступность PostgreSQL. |
 | `GET` | `/health/ollama` | Нет | Проверяет, включена ли Ollama, доступна ли она и загружена ли настроенная модель. Fallback backend остаётся доступен независимо от результата. |
@@ -157,10 +157,14 @@ Planning Run не изменяется, а результат пересчиты
 
 Горизонты:
 
-- `0–10` дней — `emergency_outsourcing`;
-- `11–45` дней — `planned_outsourcing`;
-- `46–90` дней — `planned_outsourcing` для temporary shortage и
-  `permanent_hiring` для persistent shortage после учёта lead time.
+- сегодня — `emergency_outsourcing`; внутридневные reallocation и overtime
+  остаются недоступны при daily grain;
+- `1–3` дня — `store_transfer` из подтверждённого surplus другого store на ту
+  же дату; непокрытый остаток становится `emergency_outsourcing`;
+- `4–29` дней (`one_week_to_one_month`) — `planned_outsourcing` через FTC;
+- `30–90` дней — `planned_outsourcing` для temporary shortage и
+  `permanent_hiring` для persistent shortage с outsourcing bridge до окончания
+  60-дневного lead time.
 
 Shortage считается `persistent`, если присутствует минимум в 5 разных днях или
 в 3 разных ISO-неделях внутри соответствующего горизонта. Одно действие
@@ -171,6 +175,7 @@ Shortage считается `persistent`, если присутствует ми
 
 ```json
 {
+  "action_id": "DXB-001:one_to_three_months:permanent_hiring:2026-10-05:2026-10-09",
   "store_id": "DXB-001",
   "shortage_period": {
     "date_from": "2026-10-05",
@@ -186,21 +191,37 @@ Shortage считается `persistent`, если присутствует ми
     "shortage_days": 5,
     "shortage_weeks": 2
   },
+  "evidence": {
+    "prediction_source": "catboost",
+    "model_version": "catboost-daily-residual-v1",
+    "baseline_orders_total": 1250.0,
+    "predicted_orders_total": 1284.5,
+    "prediction_correction_total": 34.5,
+    "peak_gap": {
+      "date": "2026-10-07",
+      "required_couriers": 18,
+      "available_couriers": 12,
+      "shortage_before_action": 6,
+      "action_gap_couriers": 6
+    }
+  },
   "covered_time_buckets": [
     "2026-10-05T09:00:00"
   ]
 }
 ```
 
-`schedule_reallocation`, `store_transfer` и `overtime` уже присутствуют в
-`decision_stages`, но имеют `status: pending_input_data`. Backend не применяет
-их, пока официальный Dataset не предоставит shift capacity, location/travel
-time и overtime limits. `limitations` в response явно описывает эти границы.
+`store_transfer` имеет `status: active_rule_based`, использует только свободный
+surplus и требует подтверждения менеджера. Store того же emirate получает
+приоритет. `schedule_reallocation` и `overtime` остаются
+`pending_input_data`, поскольку daily plan не содержит внутридневной сменной
+ёмкости и допустимого overtime. `limitations` явно описывает эти границы.
 
 ## AI Explain
 
 `POST /api/assistant/explain` принимает `planning_run_id`, опциональные
-`date_from`, `date_to`, `store_id` и `language` (`en` или `ru`).
+`date_from`, `date_to`, `store_id`, `decision_action_id` и `language` (`en` или
+`ru`). `decision_action_id` нельзя объединять с store/date filters.
 Неиспользуемые поля нужно удалять из JSON или передавать как `null`.
 Swagger placeholder `"string"` нельзя отправлять как `store_id`.
 
@@ -223,6 +244,25 @@ Swagger placeholder `"string"` нельзя отправлять как `store_i
 }
 ```
 
+Одна AI Suggestion после клика по карточке:
+
+```json
+{
+  "planning_run_id": 2,
+  "decision_action_id": "QED_AUH_01:today:emergency_outsourcing:2026-04-28:2026-04-28",
+  "language": "en"
+}
+```
+
+Frontend получает `action_id` из
+`GET /api/planning-runs/{planning_run_id}/decision-plan`, передаёт его в
+`/api/assistant/explain` и показывает `message` в открытой карточке. Backend
+автоматически ограничивает context магазином и периодом выбранного action.
+Для выбранной карточки Ollama объясняет только это действие в 4 коротких
+пунктах и не перечисляет пустые горизонты. В LLM отправляется только
+`selected_action` с его backend evidence; полный context остаётся в HTTP
+response для frontend, но не используется моделью при объяснении карточки.
+
 Магазин за период:
 
 ```json
@@ -239,6 +279,15 @@ Swagger placeholder `"string"` нельзя отправлять как `store_i
 `message`. Если LLM выключена, недоступна или не успела ответить, backend вернёт
 `source: structured_fallback`, `message: null` и тот же `context`.
 
+`context.decision_plan` содержит отфильтрованные rolling actions: transfer,
+FTC outsourcing, emergency outsourcing или FTE hiring. Ollama только объясняет
+эти действия и не меняет их числа, сроки или тип.
+
+`context.decision_plan.summary` покрывает все действия, а `items` содержит
+сбалансированные примеры каждого горизонта и action type. В каждом action блок
+`evidence` показывает цепочку Excel baseline → CatBoost demand → required и
+available couriers → shortage.
+
 Числа и кадровые решения формирует backend, а не LLM. Если фильтры не нашли
 строк, `context.scope.plan_rows` будет равен `0`.
 
@@ -248,5 +297,6 @@ Swagger placeholder `"string"` нельзя отправлять как `store_i
 |---|---|
 | `400` | Неверный формат файла или Excel невозможно прочитать |
 | `404` | Planning Run не найден |
+| `404` | Переданный `decision_action_id` не существует в Planning Run |
 | `422` | Ошибка валидации или неправильный диапазон дат |
 | `503` | PostgreSQL недоступен либо Ollama/настроенная модель недоступна при health-check |
