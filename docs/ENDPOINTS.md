@@ -144,6 +144,8 @@ GET /api/planning-runs/1/stores?month=2026-08
 Приоритет статусов: `critical` → `shortage` → `surplus` → `balanced`. Поэтому
 surplus другого дня не скрывает дефицит. Без `month` статус считается по всему
 Planning Run. Для месяца без planning data endpoint возвращает `422`.
+Новые Planning Runs сохраняют координаты непосредственно в `plan`; для старых
+расчётов endpoint берёт их из связанного `Dataset.normalized_data`.
 
 ## Фильтры
 

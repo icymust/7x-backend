@@ -47,6 +47,8 @@ def test_calculates_plan_for_multiple_rows():
             "available_permanent": 8,
             "available_outsourced": 4,
             "productivity_per_courier": 10,
+            "latitude": 25.2048,
+            "longitude": 55.2708,
         },
         {
             "store_id": "DXB-002",
@@ -62,6 +64,8 @@ def test_calculates_plan_for_multiple_rows():
 
     assert len(plan) == 2
     assert plan[0]["shortage"] == 3
+    assert plan[0]["latitude"] == 25.2048
+    assert plan[0]["longitude"] == 55.2708
     assert plan[1]["surplus"] == 2
 
 

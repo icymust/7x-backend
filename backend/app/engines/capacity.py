@@ -188,6 +188,8 @@ def calculate_capacity_plan(
             "predicted_shipments",
             "prediction_correction",
             "prediction_error",
+            "latitude",
+            "longitude",
         ]:
             if numeric_field in row and row[numeric_field] is not None:
                 plan_row[numeric_field] = float(row[numeric_field])

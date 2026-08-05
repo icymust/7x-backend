@@ -24,13 +24,21 @@ class FakeDatabase:
         planning_runs=None,
         total=0,
         planning_runs_by_id=None,
+        datasets_by_id=None,
     ):
         self.planning_run = planning_run
         self.planning_runs = planning_runs or []
         self.total = total
         self.planning_runs_by_id = planning_runs_by_id
+        self.datasets_by_id = datasets_by_id
 
     def get(self, model, planning_run_id):
+        if model.__name__ == "Dataset":
+            if self.datasets_by_id is None:
+                return None
+
+            return self.datasets_by_id.get(planning_run_id)
+
         if self.planning_runs_by_id is not None:
             return self.planning_runs_by_id.get(planning_run_id)
 
@@ -796,6 +804,55 @@ def test_stores_reject_month_without_planning_data():
     assert response.json() == {
         "detail": "No planning data for requested month",
     }
+
+
+def test_stores_use_dataset_coordinates_for_old_planning_run():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={
+            "plan": [
+                {
+                    "store_id": "DXB-001",
+                    "store_name": "Dubai Store",
+                    "time_bucket": "2026-08-01T00:00:00",
+                    "required_couriers": 10,
+                    "available_couriers": 10,
+                    "shortage": 0,
+                    "surplus": 0,
+                }
+            ]
+        },
+    )
+    dataset = SimpleNamespace(
+        id=1,
+        normalized_data=[
+            {
+                "store_id": "DXB-001",
+                "store_name": "Dubai Store",
+                "latitude": 25.2048,
+                "longitude": 55.2708,
+            }
+        ],
+    )
+
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(
+        planning_run,
+        datasets_by_id={1: dataset},
+    )
+
+    try:
+        response = client.get(
+            "/api/planning-runs/5/stores?month=2026-08"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    store = response.json()["stores"][0]
+
+    assert store["lat"] == 25.2048
+    assert store["lng"] == 55.2708
 
 
 def test_stores_reject_invalid_month_format():

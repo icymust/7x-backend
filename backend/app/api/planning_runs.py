@@ -10,7 +10,7 @@ from app.engines.daily_summary import build_daily_summaries
 from app.engines.decision_plan import build_decision_plan
 from app.engines.kpis import build_operational_kpis
 from app.engines.notifications import build_notifications
-from app.models import PlanningRun
+from app.models import Dataset, PlanningRun
 
 router = APIRouter(
     prefix="/api/planning-runs",
@@ -134,6 +134,24 @@ def get_planning_run_stores(
         )
 
     plan = planning_run.result.get("plan", [])
+    dataset = db.get(Dataset, planning_run.dataset_id)
+    dataset_metadata: dict[str, dict] = {}
+
+    if dataset is not None:
+        for normalized_row in dataset.normalized_data:
+            if normalized_row.get("store_id") is None:
+                continue
+
+            store_id = str(normalized_row["store_id"])
+            metadata = dataset_metadata.setdefault(store_id, {})
+
+            for field in [
+                "store_name",
+                "latitude",
+                "longitude",
+            ]:
+                if metadata.get(field) is None and normalized_row.get(field) is not None:
+                    metadata[field] = normalized_row[field]
 
     if month:
         try:
@@ -170,7 +188,19 @@ def get_planning_run_stores(
     stores = []
 
     for store_id, store_rows in sorted(rows_by_store.items()):
-        metadata = store_rows[0]
+        plan_metadata = store_rows[0]
+        metadata = {
+            **dataset_metadata.get(store_id, {}),
+            **{
+                field: plan_metadata[field]
+                for field in [
+                    "store_name",
+                    "latitude",
+                    "longitude",
+                ]
+                if plan_metadata.get(field) is not None
+            },
+        }
         latitude = metadata.get("latitude")
         longitude = metadata.get("longitude")
 
