@@ -53,10 +53,11 @@ alembic upgrade head
              demand forecast + workforce + leave
                                 |
                                 v
-                  Import → Mapping → Validation
+             Import → Mapping → Validation → Normalization
                                 |
                                 v
-                   Канонические данные backend
+             30-minute canonical capacity rows
+       demand + store metadata + FTE/FTC availability
                                 |
                                 v
                          Capacity Engine
@@ -177,6 +178,23 @@ Grain листа demand: `store_id + date + time_slot`. Период данны�
 
 ### Несоответствия README и фактического файла
 
+Ответы recruiters из `docs/7x hackathon questions .pdf` считаются более
+приоритетным business source, чем противоречащие им значения синтетического
+Excel. Подтверждено:
+
+- capacity одного courier — 2 deliveries в час или 1 delivery за 30 минут;
+- FTE — 8 рабочих часов плюс 1 час break;
+- FTC — 10 рабочих часов плюс 1 час break;
+- целевой workforce mix — 60% FTE и 40% FTC;
+- FTE cost — 4000 AED/month, FTC cost — 4500 AED/month;
+- расчётный месяц — 26 дней, revenue — 11.5 AED за completed delivery;
+- transfer занимает 1–3 дня и предпочтителен внутри одного emirate;
+- external drivers доступны за 2–5 дней;
+- нужны short-term и long-term recommendations с данными и объяснением.
+
+Главный optimization priority между shortage, service и cost пока не
+подтверждён.
+
 - README говорит о stores в Dubai, Abu Dhabi, Sharjah, Ajman и RAK, но в
   `Store_Metadata` присутствуют только Dubai, Abu Dhabi и Sharjah.
 - README описывает `max_capacity`, но такой колонки ни в одном листе нет.
@@ -187,15 +205,20 @@ Grain листа demand: `store_id + date + time_slot`. Период данны�
   говорит об индивидуальной производительности.
 - `base_dph` магазина `QED_DXB_02` равен 9.0, тогда как остальные stores имеют
   значения 1.8–2.8. Это сильный outlier, который нельзя молча исправлять.
-- У 16 couriers поле `working_hours` больше интервала между `shift_start` и
-  `shift_end`; источник истины для длительности смены не определён.
+- Все FTE соответствуют правилу `8+1`, но только 3 из 26 FTC имеют source shift
+  window 11 часов. У 16 FTC `working_hours` даже больше source shift window.
+  Normalizer доверяет recruiter rule и вычисляет shift end из `shift_start`;
+  исходный `shift_end` сохраняется только для validation warning.
 - Status `On Leave` есть у 6 couriers, но отсутствуют `leave_from` и
   `leave_to`, поэтому неизвестен точный период недоступности.
-- DPH задан за один час, а demand — за 30 минут. Capacity одного courier на
-  slot должен учитывать множитель `0.5` часа.
-- В Dataset нет labour cost, overtime limits, transfer limits, фактического
-  on-time delivery и store closures. Соответствующие KPI и cost optimization
-  нельзя честно вычислить.
+- После применения recruiter shift rule остаётся 13 795 slots с положительным
+  forecast без scheduled courier; это 13.8% forecast volume. Нужны operating
+  hours или дополнительные ночные shifts, иначе shortage останется высоким.
+- Recruiter подтвердил DPH = 2 deliveries/hour. Для 30-минутного demand slot
+  capacity одного courier равна `2 × 0.5 = 1 delivery`.
+- В Excel нет labour cost, но salary и revenue подтверждены отдельно recruiters
+  и хранятся как business configuration. Overtime limits, фактический on-time
+  delivery и store closures всё ещё отсутствуют.
 - Координаты stores присутствуют, но нет допустимого travel time, transfer
   capacity и правил совместимости смен. Одних координат недостаточно для
   автоматического transfer.
@@ -205,8 +228,9 @@ Grain листа demand: `store_id + date + time_slot`. Период данны�
 - Dataset использует Friday/Saturday как weekend, а текущий legacy calendar
   backend использует Saturday/Sunday и должен быть адаптирован.
 
-До уточнения неоднозначные значения сохраняются без исправления. Любое временное
-правило должно быть явно отмечено в API как assumption.
+Противоречащие значения Excel не исправляются внутри исходного файла. Backend
+сохраняет их для аудита, применяет подтверждённые recruiter rules и возвращает
+соответствующие warnings/assumptions.
 
 ## Mapping официального Dataset
 
@@ -228,19 +252,204 @@ multi-sheet файла. Он:
 `courier_roster`. Loader проверяет, что Excel читается, обязательные листы и
 core-колонки существуют, а mapping не создаёт повторяющиеся canonical columns.
 
-Loader пока не объединяет листы, не рассчитывает capacity и не подключён к API.
+Сам loader не объединяет листы и не рассчитывает capacity.
 `app/importers/workforce_validator.py` отдельно проверяет null values, ключи,
 числа, даты, 30-минутные slots, forecast consistency, FTE/FTC, courier status,
 weekly off, shift times и cross-sheet store integrity. Блокирующие проблемы
 возвращаются в `errors`, а неоднозначные данные — в `warnings`.
 
-На официальном XLSX validator возвращает `is_valid: true`, `0 errors` и четыре
+На официальном XLSX validator возвращает `is_valid: true`, `0 errors` и пять
 группы warnings:
 
 - один store-level productivity outlier (`QED_DXB_02`);
 - suspicious target utilization для всех 10 stores;
+- source shift window не соответствует recruiter rule у 23 FTC;
 - `working_hours` превышает shift window у 16 couriers;
 - отсутствует leave period у 6 couriers со status `On Leave`.
+
+`app/importers/workforce_normalizer.py` принимает проверенные три DataFrame и
+собирает единые capacity rows с grain `store_id + time_bucket`. Он:
+
+- объединяет `date + time_slot` в `time_bucket`;
+- сохраняет длительность каждого slot как `0.5` часа;
+- присоединяет store name, emirate, zone, coordinates и raw store productivity;
+- применяет recruiter capacity `2 deliveries/hour × 0.5 = 1 delivery/slot`;
+- считает FTE как permanent, а FTC как outsourced;
+- вычисляет shift end как `shift_start + 9h` для FTE или `shift_start + 11h`
+  для FTC и учитывает overnight shifts;
+- учитывает weekly off и status `On Leave`;
+- сохраняет actual volume и forecast error только для будущего ML/backtest.
+
+Для совместимости с Capacity Engine поля `available_permanent` и
+`available_outsourced` означают couriers, смена которых покрывает slot. Поля
+`permanent_unavailable` и `outsourced_unavailable` содержат находящихся среди
+них на weekly off или `On Leave`. Поэтому effective availability будет
+рассчитана ровно один раз внутри Capacity Engine.
+
+Временные assumptions normalizer возвращает явно:
+
+- recruiter shift duration важнее конфликтующего source `shift_end`;
+- вычисленный shift end не включается в смену;
+- один час break пока не назначается конкретным slots, потому что break schedule
+  отсутствует;
+- из-за отсутствия leave dates status `On Leave` действует на весь горизонт;
+- capacity slot использует подтверждённую productivity `1 delivery`;
+- official target utilization равен `1.0`, а подозрительный raw
+  `target_utilization_percent` сохраняется только как metadata.
+
+Проверка полного официального файла дала 43 680 capacity rows, 10 stores и
+период `2026-04-28 00:00` — `2026-07-27 23:30`. Normalizer пока не подключён к
+`/preview` и `/calculate`.
+
+## Формулы официального Dataset
+
+Официальный Excel не содержит готового staffing plan. Он предоставляет demand,
+store productivity и courier roster. Backend последовательно получает из них
+следующие значения.
+
+### Нормализация временного интервала
+
+```text
+time_bucket = date + time_slot
+time_bucket_hours = 30 / 60 = 0.5
+productivity_per_courier = 2 deliveries/hour × 0.5 = 1 delivery
+official_target_utilization = 1.0
+```
+
+`productivity_per_courier` показывает, сколько доставок один courier способен
+выполнить за один 30-минутный slot. Recruiters подтвердили это значение, поэтому
+store-level `base_dph` сохраняется для аудита/ML, но не управляет staffing.
+
+### Доступность workforce
+
+Для каждого courier normalizer берёт `shift_start`, затем по recruiter rule
+вычисляет конец присутствия:
+
+```text
+FTE shift end = shift_start + 8 work hours + 1 break hour
+FTC shift end = shift_start + 10 work hours + 1 break hour
+```
+
+После этого для каждого store и time bucket считаются couriers, чья вычисленная
+смена покрывает интервал:
+
+```text
+available_permanent = количество FTE внутри shift interval
+available_outsourced = количество FTC внутри shift interval
+
+permanent_unavailable = FTE внутри смены с weekly off или On Leave
+outsourced_unavailable = FTC внутри смены с weekly off или On Leave
+
+effective_permanent = available_permanent - permanent_unavailable
+effective_outsourced = available_outsourced - outsourced_unavailable
+available_couriers = effective_permanent + effective_outsourced
+```
+
+Несмотря на название, `available_permanent/outsourced` здесь означает
+запланированный roster внутри смены до вычета отсутствующих. Это сохраняет
+совместимость с существующим Capacity Engine.
+
+### Требуемое количество и дефицит
+
+После подключения official normalizer к `/calculate` существующий Capacity
+Engine будет применять:
+
+```text
+required_couriers = ceil(
+    forecast_shipments
+    / productivity_per_courier
+    / target_utilization
+)
+
+capacity_gap = available_couriers - required_couriers
+shortage = max(required_couriers - available_couriers, 0)
+surplus = max(available_couriers - required_couriers, 0)
+```
+
+Для official flow `productivity_per_courier = 1` и
+`target_utilization = 1.0`, поэтому формула упрощается:
+
+```text
+required_couriers = ceil(forecast_shipments)
+```
+
+Неподтверждённый buffer `0.85` не применяется. Значения
+`target_utilisation_pct = 16–20` из Excel остаются raw metadata.
+
+`actual_shipments` и `forecast_error` не участвуют в расчёте staffing для той же
+строки: это было бы target leakage. Они используются только для оценки качества
+forecast и будущего time-based ML backtest.
+
+### Recommendation Engine
+
+Текущий fallback использует временное правило 60% permanent / 40% outsourced:
+
+```text
+target_permanent = ceil(required_couriers × 0.60)
+target_outsourced = required_couriers - target_permanent
+permanent_gap = max(target_permanent - effective_permanent, 0)
+add_permanent = min(shortage, permanent_gap)
+add_outsourced = shortage - add_permanent
+```
+
+Permanent hiring за 60 дней пока остаётся MVP assumption. Recruiters
+подтвердили external drivers lead time 2–5 дней, поэтому временное значение 10
+дней в Recommendation Engine ещё нужно заменить. Это rule-based MVP, а не
+результат ML или cost optimization.
+
+## KPI: что считаем и зачем
+
+KPI не берутся готовыми из Excel. `GET /api/planning-runs/{id}/kpis` агрегирует
+уже рассчитанные capacity rows выбранного Planning Run, магазина и периода.
+
+Текущие операционные KPI:
+
+```text
+required_courier_slots = sum(required_couriers)
+available_courier_slots = sum(available_couriers)
+shortage_courier_slots = sum(shortage)
+surplus_courier_slots = sum(surplus)
+
+covered_slots = sum(min(required_couriers, available_couriers))
+coverage_percent = covered_slots / required_courier_slots × 100
+```
+
+- `coverage_percent` — какая доля требуемой courier capacity покрыта;
+- `understaffed_buckets` — сколько временных интервалов имеют shortage;
+- `balanced_buckets` — сколько интервалов закрыто без shortage и surplus;
+- `overstaffed_buckets` — сколько интервалов имеют surplus;
+- `affected_stores` — сколько stores сталкиваются с дефицитом;
+- `critical_days` — дни, где shortage не менее 20% required capacity либо
+  существует recommendation с priority `critical`;
+- `emergency_hiring_actions` — количество time buckets, которым требуется
+  emergency outsourcing.
+
+Суммы `*_courier_slots` не являются количеством уникальных couriers: один
+courier может учитываться в нескольких 30-минутных slots. Для решения «сколько
+людей одновременно нужно» используются bucket-level значения и maximum
+shortage, а не сумма за день или месяц.
+
+Из `forecast_shipments` и `actual_shipments` также реально добавить KPI качества
+прогноза:
+
+```text
+forecast_error = actual_shipments - forecast_shipments
+MAE = mean(abs(forecast_error))
+bias = mean(forecast_error)
+WAPE = sum(abs(forecast_error)) / sum(actual_shipments) × 100
+```
+
+Эти показатели нужны, чтобы доказать измеримое улучшение ML относительно
+исходного forecast. Они ещё не добавлены в текущий KPI endpoint.
+
+Главные KPI для MVP: `coverage_percent`, доля understaffed buckets и forecast
+WAPE. `surplus_courier_slots` нужен как guardrail, чтобы система не улучшала
+coverage простым избыточным наймом.
+
+Salary и revenue отсутствуют в XLSX, но подтверждены recruiters и позволяют
+добавить базовые cost/revenue KPI через business configuration. Пока нельзя
+честно рассчитать overtime cost, on-time delivery/SLA и фактическую
+эффективность transfers: соответствующие данные отсутствуют.
 
 ## Что уже сделано в backend
 
@@ -250,6 +459,8 @@ weekly off, shift times и cross-sheet store integrity. Блокирующие �
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
 - Mapping и multi-sheet loader официального workforce Dataset.
 - Workforce validator для трёх листов и cross-sheet связей.
+- Workforce normalizer для 30-минутных capacity rows, shift availability,
+  FTE/FTC, weekly off и leave.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -309,4 +520,4 @@ weekly off, shift times и cross-sheet store integrity. Блокирующие �
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 85 тестов проходят.
+- Автоматические тесты pytest: 90 тестов проходят.

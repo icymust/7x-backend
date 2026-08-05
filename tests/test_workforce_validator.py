@@ -135,5 +135,7 @@ def test_reports_non_blocking_dataset_warnings():
     assert issue_codes(result.warnings) == {
         "suspicious_target_utilization_percent",
         "working_hours_exceed_shift_window",
+        "working_hours_differ_from_business_rule",
+        "source_shift_window_differs_from_business_rule",
         "leave_period_missing",
     }

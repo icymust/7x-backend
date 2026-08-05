@@ -2,6 +2,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from app.business_rules import (
+    BREAK_HOURS,
+    DELIVERIES_PER_COURIER_HOUR,
+    WORKING_HOURS_BY_EMPLOYMENT_TYPE,
+)
 from app.importers.workforce_loader import WorkforceWorkbook
 
 
@@ -503,7 +508,7 @@ def _validate_courier_roster(
                 }
             )
 
-    _numeric_values(
+    productivity = _numeric_values(
         dataframe,
         sheet=sheet,
         column="courier_productivity_per_hour",
@@ -511,6 +516,58 @@ def _validate_courier_roster(
         minimum=0,
         minimum_inclusive=False,
     )
+
+    unexpected_productivity = productivity.notna() & (
+        productivity != DELIVERIES_PER_COURIER_HOUR
+    )
+    if unexpected_productivity.any():
+        result.warnings.append(
+            {
+                "code": "courier_productivity_differs_from_business_rule",
+                "sheet": sheet,
+                "column": "courier_productivity_per_hour",
+                "rows": _excel_rows(unexpected_productivity),
+            }
+        )
+
+    start_minutes = shift_start.dt.hour * 60 + shift_start.dt.minute
+    end_minutes = shift_end.dt.hour * 60 + shift_end.dt.minute
+    shift_minutes = (end_minutes - start_minutes) % (24 * 60)
+    invalid_shift_window = shift_start.notna() & shift_end.notna() & (
+        shift_minutes == 0
+    )
+
+    if invalid_shift_window.any():
+        result.errors.append(
+            {
+                "code": "invalid_shift_window",
+                "sheet": sheet,
+                "rows": _excel_rows(invalid_shift_window),
+            }
+        )
+
+    expected_shift_hours = employment_types.map(
+        {
+            employment_type: working_hours + BREAK_HOURS
+            for employment_type, working_hours in (
+                WORKING_HOURS_BY_EMPLOYMENT_TYPE.items()
+            )
+        }
+    )
+    source_shift_differs = (
+        shift_start.notna()
+        & shift_end.notna()
+        & expected_shift_hours.notna()
+        & (shift_minutes != expected_shift_hours * 60)
+    )
+    if source_shift_differs.any():
+        result.warnings.append(
+            {
+                "code": "source_shift_window_differs_from_business_rule",
+                "sheet": sheet,
+                "rows": _excel_rows(source_shift_differs),
+            }
+        )
 
     if "working_hours" in dataframe.columns:
         working_hours = _numeric_values(
@@ -523,19 +580,21 @@ def _validate_courier_roster(
             minimum_inclusive=False,
         )
 
-        start_minutes = shift_start.dt.hour * 60 + shift_start.dt.minute
-        end_minutes = shift_end.dt.hour * 60 + shift_end.dt.minute
-        shift_minutes = (end_minutes - start_minutes) % (24 * 60)
-        invalid_shift_window = shift_start.notna() & shift_end.notna() & (
-            shift_minutes == 0
+        expected_working_hours = employment_types.map(
+            WORKING_HOURS_BY_EMPLOYMENT_TYPE
         )
-
-        if invalid_shift_window.any():
-            result.errors.append(
+        unexpected_working_hours = (
+            working_hours.notna()
+            & expected_working_hours.notna()
+            & (working_hours != expected_working_hours)
+        )
+        if unexpected_working_hours.any():
+            result.warnings.append(
                 {
-                    "code": "invalid_shift_window",
+                    "code": "working_hours_differ_from_business_rule",
                     "sheet": sheet,
-                    "rows": _excel_rows(invalid_shift_window),
+                    "column": "working_hours",
+                    "rows": _excel_rows(unexpected_working_hours),
                 }
             )
 
