@@ -1,6 +1,9 @@
-import type { FeatureCollection, Point } from 'geojson'
+import type { Feature, FeatureCollection, Point } from 'geojson'
+import { ABU_DHABI_CENTER } from './mapData'
+import { fetchLatestPlanRows, latestRowPerStore, type BackendPlanRow } from '../services/warehousesApi'
+import { hashString, mulberry32 } from '../utils/seededRandom'
 
-export type WarehouseStatus = 'Operational' | 'Under Expansion' | 'Limited Capacity'
+export type WarehouseStatus = 'Operational' | 'Under Expansion' | 'Limited Capacity' | 'Unknown'
 
 // Driver-capacity status: how courier headcount is tracking against the
 // orders they're handling. Derived from courierLoadPercent rather than
@@ -29,6 +32,10 @@ function computeDriverStatus(courierLoadPercent: number): DriverStatus {
 }
 
 export interface WarehouseProperties {
+  // Backend's raw store_id - kept separate from the display `name` (which
+  // may be a friendlier store_name) so other backend resources keyed by
+  // store_id, like notifications, can be cross-referenced reliably.
+  storeId: string
   name: string
   zone: string
   capacitySqm: number
@@ -45,159 +52,104 @@ export interface WarehouseProperties {
   nextMonthDemand: number
 }
 
-interface RawWarehouse {
-  name: string
-  zone: string
-  capacitySqm: number
-  utilizationPercent: number
-  activeShipments: number
-  staff: number
-  status: WarehouseStatus
-  isMainBranch?: boolean
-  couriers: number
-  avgCourierKpi: number
-  courierLoadPercent: number
-  currentMonthDemand: number
-  nextMonthDemand: number
-  coords: [number, number]
+// Backend has no capacity/utilization/staff/courier-KPI concept at all yet -
+// these two are seeded per store_id so they're stable across reloads and
+// don't all look identical, but they are NOT real data. Everything else the
+// backend genuinely lacks (see loadWarehouses()) is zeroed instead of faked.
+function mockCapacitySqm(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|capacity`))
+  return Math.round((6000 + rand() * 26000) / 10) * 10
 }
 
-const rawWarehouses: RawWarehouse[] = [
-  {
-    name: 'Mussafah Central Warehouse',
-    zone: 'ICAD 1',
-    capacitySqm: 18000,
-    utilizationPercent: 82,
-    activeShipments: 46,
-    staff: 128,
-    status: 'Operational',
-    isMainBranch: true,
-    couriers: 42,
-    avgCourierKpi: 91,
-    courierLoadPercent: 78,
-    currentMonthDemand: 420,
-    nextMonthDemand: 460,
-    coords: [54.498, 24.349],
-  },
-  {
-    name: 'ICAD 2 Logistics Park',
-    zone: 'ICAD 2',
-    capacitySqm: 24500,
-    utilizationPercent: 67,
-    activeShipments: 38,
-    staff: 94,
-    status: 'Operational',
-    couriers: 35,
-    avgCourierKpi: 87,
-    courierLoadPercent: 64,
-    currentMonthDemand: 310,
-    nextMonthDemand: 295,
-    coords: [54.512, 24.331],
-  },
-  {
-    name: 'ICAD 3 Distribution Hub',
-    zone: 'ICAD 3',
-    capacitySqm: 15200,
-    utilizationPercent: 91,
-    activeShipments: 52,
-    staff: 76,
-    status: 'Limited Capacity',
-    couriers: 30,
-    avgCourierKpi: 82,
-    courierLoadPercent: 95,
-    currentMonthDemand: 380,
-    nextMonthDemand: 430,
-    coords: [54.523, 24.317],
-  },
-  {
-    name: 'MBZ City Storage Facility',
-    zone: 'Mohammed Bin Zayed City',
-    capacitySqm: 9800,
-    utilizationPercent: 54,
-    activeShipments: 19,
-    staff: 41,
-    status: 'Operational',
-    couriers: 16,
-    avgCourierKpi: 89,
-    courierLoadPercent: 52,
-    currentMonthDemand: 150,
-    nextMonthDemand: 165,
-    coords: [54.545, 24.322],
-  },
-  {
-    name: 'Al Falah Bulk Warehouse',
-    zone: 'Al Falah',
-    capacitySqm: 12300,
-    utilizationPercent: 48,
-    activeShipments: 22,
-    staff: 35,
-    status: 'Under Expansion',
-    couriers: 12,
-    avgCourierKpi: 79,
-    courierLoadPercent: 45,
-    currentMonthDemand: 110,
-    nextMonthDemand: 140,
-    coords: [54.56, 24.4],
-  },
-  {
-    name: 'Khalifa Port Free Zone Depot',
-    zone: 'KPFZ',
-    capacitySqm: 31000,
-    utilizationPercent: 73,
-    activeShipments: 64,
-    staff: 152,
-    status: 'Operational',
-    couriers: 58,
-    avgCourierKpi: 93,
-    courierLoadPercent: 70,
-    currentMonthDemand: 540,
-    nextMonthDemand: 505,
-    coords: [54.628, 24.52],
-  },
-  {
-    name: 'Baniyas Cold Storage',
-    zone: 'Baniyas Industrial',
-    capacitySqm: 7600,
-    utilizationPercent: 60,
-    activeShipments: 14,
-    staff: 28,
-    status: 'Operational',
-    couriers: 10,
-    avgCourierKpi: 85,
-    courierLoadPercent: 58,
-    currentMonthDemand: 95,
-    nextMonthDemand: 100,
-    coords: [54.64, 24.336],
-  },
-]
+function mockAvgCourierKpi(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|kpi`))
+  return Math.round(78 + rand() * 17)
+}
+
+function courierLoadPercentFor(row: BackendPlanRow): number {
+  if (row.required_courier_hours != null && row.available_courier_hours != null) {
+    return row.available_courier_hours > 0
+      ? Math.round((row.required_courier_hours / row.available_courier_hours) * 100)
+      : 100
+  }
+  return row.available_couriers > 0
+    ? Math.round((row.required_couriers / row.available_couriers) * 100)
+    : 100
+}
+
+function toWarehouseFeature(row: BackendPlanRow): Feature<Point, WarehouseProperties> {
+  const courierLoadPercent = courierLoadPercentFor(row)
+
+  return {
+    type: 'Feature',
+    // Store_Metadata requires latitude/longitude on upload, but the backend
+    // drops them before they reach any API response (verified against
+    // capacity.py's plan-row builder and every test fixture) - so there's no
+    // real coordinate to place on the map yet.
+    geometry: { type: 'Point', coordinates: [0, 0] },
+    properties: {
+      storeId: row.store_id,
+      name: row.store_name ?? row.store_id,
+      zone: row.zone ?? row.emirate ?? '',
+      capacitySqm: mockCapacitySqm(row.store_id),
+      utilizationPercent: 0,
+      activeShipments: 0,
+      staff: 0,
+      status: 'Unknown',
+      isMainBranch: false,
+      couriers: row.available_permanent + row.available_outsourced,
+      avgCourierKpi: mockAvgCourierKpi(row.store_id),
+      courierLoadPercent,
+      driverStatus: computeDriverStatus(courierLoadPercent),
+      currentMonthDemand: 0,
+      nextMonthDemand: 0,
+    },
+  }
+}
 
 export const warehouses: FeatureCollection<Point, WarehouseProperties> = {
   type: 'FeatureCollection',
-  features: rawWarehouses.map((w) => ({
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: w.coords },
-    properties: {
-      name: w.name,
-      zone: w.zone,
-      capacitySqm: w.capacitySqm,
-      utilizationPercent: w.utilizationPercent,
-      activeShipments: w.activeShipments,
-      staff: w.staff,
-      status: w.status,
-      isMainBranch: Boolean(w.isMainBranch),
-      couriers: w.couriers,
-      avgCourierKpi: w.avgCourierKpi,
-      courierLoadPercent: w.courierLoadPercent,
-      driverStatus: computeDriverStatus(w.courierLoadPercent),
-      currentMonthDemand: w.currentMonthDemand,
-      nextMonthDemand: w.nextMonthDemand,
-    },
-  })),
+  features: [],
 }
 
-const mainBranchFeature = warehouses.features.find((f) => f.properties.isMainBranch)!
-export const mainBranchWarehouse: WarehouseProperties = mainBranchFeature.properties
-export const mainBranchCoords = mainBranchFeature.geometry.coordinates as [number, number]
+// Fallback for when the backend has no Planning Run yet (fresh DB, nothing
+// uploaded) - keeps mainBranchWarehouse non-optional so every consumer
+// doesn't need an undefined-check, at the cost of this one inert placeholder.
+const EMPTY_WAREHOUSE: WarehouseProperties = {
+  storeId: '',
+  name: 'No warehouse data',
+  zone: '',
+  capacitySqm: 0,
+  utilizationPercent: 0,
+  activeShipments: 0,
+  staff: 0,
+  status: 'Unknown',
+  isMainBranch: true,
+  couriers: 0,
+  avgCourierKpi: 0,
+  courierLoadPercent: 0,
+  driverStatus: 'surplus',
+  currentMonthDemand: 0,
+  nextMonthDemand: 0,
+}
+
+export let mainBranchWarehouse: WarehouseProperties = EMPTY_WAREHOUSE
+export let mainBranchCoords: [number, number] = ABU_DHABI_CENTER
+
+// Fetches the latest Planning Run from the backend and populates `warehouses`
+// in place. Call once at app startup (see main.ts) - components read
+// `warehouses`/`mainBranchWarehouse`/`mainBranchCoords` synchronously, so
+// this needs to resolve before the app mounts rather than be reactive.
+export async function loadWarehouses(): Promise<void> {
+  const rows = await fetchLatestPlanRows()
+  const latestRows = latestRowPerStore(rows)
+
+  warehouses.features = latestRows.map(toWarehouseFeature)
+
+  const mainFeature = warehouses.features[0]
+  mainBranchWarehouse = mainFeature?.properties ?? EMPTY_WAREHOUSE
+  mainBranchCoords = (mainFeature?.geometry.coordinates as [number, number] | undefined) ?? ABU_DHABI_CENTER
+}
 
 export interface DemandHistoryPoint {
   month: string

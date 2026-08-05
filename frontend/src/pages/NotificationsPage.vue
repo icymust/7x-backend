@@ -2,7 +2,7 @@
 import { computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
-import { notifications, NOTIFICATION_STATUS_COLOR } from '../data/notificationsData'
+import { notifications, totalNotificationCount, NOTIFICATION_STATUS_COLOR } from '../data/notificationsData'
 
 const router = useRouter()
 
@@ -28,7 +28,7 @@ function goToWarehouse(warehouseName: string) {
         <span class="notifications__eyebrow">Overview</span>
         <h1 class="notifications__title">Notifications</h1>
         <p class="notifications__subtitle">
-          {{ unreadCount }} unread &middot; {{ notifications.length }} total
+          {{ unreadCount }} unread &middot; showing {{ notifications.length }} of {{ totalNotificationCount }}
         </p>
       </header>
 
