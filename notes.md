@@ -597,6 +597,9 @@ WAPE improvement: 0.0508 percentage points
   seasonal fallback.
 - Rolling actions содержат проверяемый `evidence`: baseline/ML demand,
   model source, peak required/available и shortage до действия.
+- `decision_basis` отдельно показывает длительность конкретного action и
+  длительность полного persistent shortage, чтобы outsourcing bridge не
+  выглядел как действие на весь долгосрочный период.
 - Горизонт `one_week_to_one_month` однозначно означает дни `4–29`, а не
   фиксированную недельную длительность action.
 - Каждое rolling action имеет стабильный `action_id`; frontend передаёт его в
@@ -669,4 +672,3 @@ WAPE improvement: 0.0508 percentage points
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
 - Автоматические тесты pytest: 114 тестов проходят.
-

@@ -26,7 +26,9 @@ Use only the selected_action JSON provided by the user.
 Do not recalculate, change, infer or invent any value or decision.
 Output exactly four concise bullet points and no other text:
 - Recommendation: action type and courier count.
-- Evidence: predicted orders, required couriers, available couriers and shortage.
+- Evidence: state that predicted_orders_total is the total for the covered
+  shortage period and include covered_shortage_days. Then state that required
+  couriers, available couriers and shortage describe the peak_gap date.
 - Timing: shortage period and deadline.
 - Reason: human-friendly explanation of the backend reason and time horizon.
 Never mention another time horizon, another store, missing data or a plan summary.

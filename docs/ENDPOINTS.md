@@ -203,8 +203,10 @@ Shortage считается `persistent`, если присутствует ми
   "priority": "medium",
   "reason": "persistent_shortage_requires_permanent_hiring",
   "decision_basis": {
-    "shortage_days": 5,
-    "shortage_weeks": 2
+    "covered_shortage_days": 5,
+    "covered_shortage_weeks": 2,
+    "persistent_shortage_days_total": 5,
+    "persistent_shortage_weeks_total": 2
   },
   "evidence": {
     "prediction_source": "catboost",
@@ -225,6 +227,11 @@ Shortage считается `persistent`, если присутствует ми
   ]
 }
 ```
+
+`covered_shortage_*` описывает только период конкретного action.
+`persistent_shortage_*_total` описывает полный устойчивый дефицит, на основании
+которого Decision Engine выбрал persistent strategy. Для outsourcing bridge эти
+значения могут различаться.
 
 `store_transfer` имеет `status: active_rule_based`, использует только свободный
 surplus и требует подтверждения менеджера. Store того же emirate получает
@@ -277,6 +284,8 @@ Frontend получает `action_id` из
 пунктах и не перечисляет пустые горизонты. В LLM отправляется только
 `selected_action` с его backend evidence; полный context остаётся в HTTP
 response для frontend, но не используется моделью при объяснении карточки.
+`predicted_orders_total` объясняется как сумма за покрываемый период, а
+required/available/shortage — как значения дня `peak_gap`.
 
 Магазин за период:
 
