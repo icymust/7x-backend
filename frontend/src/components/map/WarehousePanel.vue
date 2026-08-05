@@ -37,6 +37,11 @@ const route = useRoute()
 
 const searchQuery = ref('')
 
+// Tracked (rather than left as the Accordion's uncontrolled default) so
+// WarehouseAiSuggestions can tell when its own panel becomes the open one
+// and lazy-load its data on that transition instead of on mount.
+const accordionValue = ref('metrics')
+
 // Drives which way the list/detail swap slides: forward (right-to-left)
 // when drilling into a warehouse, backward (left-to-right) when returning
 // to the list - regardless of whether the trigger was a list click, a map
@@ -208,7 +213,7 @@ const chartOptions = computed(() => {
           </span>
         </div>
 
-        <Accordion class="warehouse-panel__accordion" value="metrics">
+        <Accordion class="warehouse-panel__accordion" v-model:value="accordionValue">
           <AccordionPanel value="metrics">
             <AccordionHeader>Metrics</AccordionHeader>
             <AccordionContent>
@@ -252,7 +257,12 @@ const chartOptions = computed(() => {
           <AccordionPanel value="ai">
             <AccordionHeader>AI Suggestions</AccordionHeader>
             <AccordionContent>
-              <WarehouseAiSuggestions :key="active.name" :warehouse-name="active.name" />
+              <WarehouseAiSuggestions
+                :key="active.name"
+                :warehouse-name="active.name"
+                :store-id="active.storeId"
+                :is-open="accordionValue === 'ai'"
+              />
             </AccordionContent>
           </AccordionPanel>
 

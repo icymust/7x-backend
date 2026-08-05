@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
@@ -7,8 +7,14 @@ import Select from 'primevue/select'
 import DatePicker from 'primevue/datepicker'
 import Textarea from 'primevue/textarea'
 import { warehouses } from '../../data/warehouseData'
+import {
+  fetchStoreRecommendations,
+  type BackendRecommendationRow,
+  type RecommendationPriority,
+  type RecommendationReason,
+} from '../../services/recommendationsApi'
 
-const props = defineProps<{ warehouseName: string }>()
+const props = defineProps<{ warehouseName: string; storeId: string; isOpen: boolean }>()
 
 type ActionId = 'transport' | 'outsource' | 'hire'
 
@@ -67,6 +73,129 @@ const hireForm = ref({
   notes: '',
 })
 
+// Backend-derived suggestions, rendered as readable messages above the
+// manual actions below. Loaded lazily - see the isOpen watcher - rather
+// than on mount, since this component stays mounted (just hidden) while
+// its accordion panel is collapsed.
+interface SuggestionMessage {
+  id: string
+  icon: string
+  color: string
+  priority: RecommendationPriority
+  title: string
+  text: string
+}
+
+const PRIORITY_COLOR: Record<RecommendationPriority, string> = {
+  critical: '#dc2626',
+  high: '#f97316',
+  medium: '#2563eb',
+  low: '#16a34a',
+}
+
+const REASON_ICON: Record<RecommendationReason, string> = {
+  emergency_outsourcing_required: 'pi pi-exclamation-triangle',
+  permanent_lead_time_missed: 'pi pi-clock',
+  planned_hiring: 'pi pi-user-plus',
+  capacity_is_sufficient: 'pi pi-check-circle',
+}
+
+const hasLoadedSuggestions = ref(false)
+const loadingSuggestions = ref(false)
+const suggestionsError = ref<string | null>(null)
+const suggestionMessages = ref<SuggestionMessage[]>([])
+
+function dateLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// The backend returns one recommendation row per day (up to ~90 for a
+// future-forecast Planning Run) - collapsing consecutive days that share
+// the same reason into one message keeps the tab to a handful of cards
+// instead of a wall of near-identical daily entries.
+function groupByReason(rows: BackendRecommendationRow[]): BackendRecommendationRow[][] {
+  const groups: BackendRecommendationRow[][] = []
+  for (const row of rows) {
+    const current = groups[groups.length - 1]
+    if (current && current[0].recommendation.reason === row.recommendation.reason) {
+      current.push(row)
+    } else {
+      groups.push([row])
+    }
+  }
+  return groups
+}
+
+function messageFor(group: BackendRecommendationRow[]): SuggestionMessage {
+  const first = group[0]
+  const last = group[group.length - 1]
+  const reason = first.recommendation.reason
+  const range = group.length > 1 ? `${dateLabel(first.time_bucket)} - ${dateLabel(last.time_bucket)}` : dateLabel(first.time_bucket)
+  const maxAddOutsourced = Math.max(...group.map((r) => r.recommendation.add_outsourced))
+  const maxAddPermanent = Math.max(...group.map((r) => r.recommendation.add_permanent))
+  const maxShortage = Math.max(...group.map((r) => r.shortage))
+  const earliestOutsourcedStartBy = group.map((r) => r.recommendation.outsourced_start_by).sort()[0]
+  const earliestPermanentStartBy = group.map((r) => r.recommendation.permanent_start_by).sort()[0]
+
+  const base = {
+    id: `${reason}-${first.time_bucket}`,
+    icon: REASON_ICON[reason],
+    color: PRIORITY_COLOR[first.recommendation.priority],
+    priority: first.recommendation.priority,
+  }
+
+  switch (reason) {
+    case 'emergency_outsourcing_required':
+      return {
+        ...base,
+        title: 'Emergency outsourcing needed',
+        text: `${range}: the outsourcing lead time has already passed - bring in up to ${maxAddOutsourced} outsourced couriers on an emergency basis to close a shortage of up to ${maxShortage} couriers.`,
+      }
+    case 'permanent_lead_time_missed':
+      return {
+        ...base,
+        title: 'Bridge with outsourcing while hiring catches up',
+        text: `${range}: the 60-day permanent-hiring lead time has already passed - cover the gap with up to ${maxAddOutsourced} outsourced couriers in the meantime.`,
+      }
+    case 'planned_hiring':
+      return {
+        ...base,
+        title: 'Plan hiring ahead of demand',
+        text: `${range}: there's still time to hire properly - add up to ${maxAddPermanent} permanent couriers (start by ${dateLabel(earliestPermanentStartBy)}) and ${maxAddOutsourced} outsourced couriers (start by ${dateLabel(earliestOutsourcedStartBy)}).`,
+      }
+    default:
+      return {
+        ...base,
+        title: 'Capacity is sufficient',
+        text: `${range}: no additional hiring or outsourcing action is needed.`,
+      }
+  }
+}
+
+async function loadSuggestions() {
+  loadingSuggestions.value = true
+  suggestionsError.value = null
+  try {
+    const rows = await fetchStoreRecommendations(props.storeId)
+    suggestionMessages.value = groupByReason(rows).map(messageFor)
+  } catch {
+    suggestionsError.value = 'Could not load AI suggestions. Try again later.'
+  } finally {
+    loadingSuggestions.value = false
+  }
+}
+
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (open && !hasLoadedSuggestions.value) {
+      hasLoadedSuggestions.value = true
+      loadSuggestions()
+    }
+  },
+  { immediate: true },
+)
+
 const activeAction = ref<SuggestionAction | null>(null)
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -96,8 +225,31 @@ function handleSubmit() {
 
 <template>
   <div class="ai-suggestions">
-    <p class="ai-suggestions__subtitle">Actions to help stabilize this branch</p>
+    <p class="ai-suggestions__subtitle">AI-generated suggestions for this branch</p>
 
+    <div v-if="loadingSuggestions" class="ai-suggestions__status">Loading suggestions…</div>
+    <p v-else-if="suggestionsError" class="ai-suggestions__status ai-suggestions__status--error">
+      {{ suggestionsError }}
+    </p>
+    <p v-else-if="hasLoadedSuggestions && suggestionMessages.length === 0" class="ai-suggestions__status">
+      No suggestions right now - capacity looks sufficient.
+    </p>
+    <div v-else-if="suggestionMessages.length" class="ai-suggestions__messages">
+      <div
+        v-for="message in suggestionMessages"
+        :key="message.id"
+        class="ai-suggestions__message"
+        :style="{ '--msg-color': message.color }"
+      >
+        <span class="ai-suggestions__message-icon"><i :class="message.icon" /></span>
+        <div class="ai-suggestions__message-body">
+          <span class="ai-suggestions__message-title">{{ message.title }}</span>
+          <p class="ai-suggestions__message-text">{{ message.text }}</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="ai-suggestions__section-label">Actions</p>
     <div class="ai-suggestions__list">
       <button
         v-for="action in actions"
@@ -207,6 +359,81 @@ function handleSubmit() {
 .ai-suggestions__subtitle {
   margin: 0 0 0.85rem;
   font-size: 0.76rem;
+  color: var(--p-text-muted-color);
+}
+
+.ai-suggestions__status {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px dashed var(--p-content-border-color);
+  border-radius: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--p-text-muted-color);
+  text-align: center;
+}
+
+.ai-suggestions__status--error {
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #dc2626;
+}
+
+.ai-suggestions__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 1.1rem;
+}
+
+.ai-suggestions__message {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--p-content-border-color);
+  border-left: 3px solid var(--msg-color);
+  border-radius: 0.75rem;
+  background: var(--p-content-background);
+}
+
+.ai-suggestions__message-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.6rem;
+  background: color-mix(in srgb, var(--msg-color) 12%, transparent);
+  color: var(--msg-color);
+  font-size: 0.9rem;
+}
+
+.ai-suggestions__message-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ai-suggestions__message-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--p-text-color);
+}
+
+.ai-suggestions__message-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--p-text-muted-color);
+}
+
+.ai-suggestions__section-label {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--p-text-muted-color);
 }
 
