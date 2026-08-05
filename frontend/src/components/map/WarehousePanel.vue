@@ -30,6 +30,7 @@ import { useWarehouseSelection } from '../../composables/useWarehouseSelection'
 import DemandCalendar from './DemandCalendar.vue'
 import DemandHourlyChart from './DemandHourlyChart.vue'
 import WarehouseAiSuggestions from './WarehouseAiSuggestions.vue'
+import WarehouseManageActions from './WarehouseManageActions.vue'
 
 const { isDark } = useTheme()
 const { selectedWarehouse, showList, selectWarehouse, showWarehouseList } = useWarehouseSelection()
@@ -259,10 +260,16 @@ const chartOptions = computed(() => {
             <AccordionContent>
               <WarehouseAiSuggestions
                 :key="active.name"
-                :warehouse-name="active.name"
                 :store-id="active.storeId"
                 :is-open="accordionValue === 'ai'"
               />
+            </AccordionContent>
+          </AccordionPanel>
+
+          <AccordionPanel value="manage">
+            <AccordionHeader>Manage</AccordionHeader>
+            <AccordionContent>
+              <WarehouseManageActions :key="active.name" :warehouse-name="active.name" />
             </AccordionContent>
           </AccordionPanel>
 
