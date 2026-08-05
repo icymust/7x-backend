@@ -2,7 +2,7 @@
 
 ## Запуск
 
-Из корня backend:
+Из корня repository, где расположен `compose.yaml`:
 
 ```bash
 docker compose up --build -d
@@ -10,6 +10,9 @@ docker compose up --build -d
 
 Команда собирает FastAPI image, запускает PostgreSQL, ждёт готовности базы,
 применяет `alembic upgrade head` и запускает Uvicorn.
+
+Compose собирает backend с build context `./backend`. Frontend сможет быть
+добавлен рядом отдельным service без изменения структуры Python-проекта.
 
 После запуска:
 

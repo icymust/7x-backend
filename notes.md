@@ -4,13 +4,19 @@
 
 ```bash
 # Активировать виртуальное окружение Python
-source .venv/bin/activate
+source backend/.venv/bin/activate
+
+# Перейти в backend для Python-команд
+cd backend
 
 # Запустить backend в режиме разработки
 uvicorn app.main:app --reload
 
 # Запустить все тесты
 pytest
+
+# Вернуться в корень monorepo для Docker-команд
+cd ..
 
 # Запустить Docker на macOS
 colima start
@@ -36,6 +42,9 @@ docker compose exec postgres psql -U sevenx -d sevenx
 # Остановить контейнеры проекта без удаления данных
 docker compose stop
 
+# Снова перейти в backend для Alembic-команд
+cd backend
+
 # Показать текущую версию миграции
 alembic current
 
@@ -45,6 +54,21 @@ alembic revision --autogenerate -m "migration description"
 # Применить все новые миграции
 alembic upgrade head
 ```
+
+## Структура monorepo
+
+```text
+repository/
+├── backend/       # FastAPI, tests, Alembic и Python dependencies
+├── frontend/      # frontend-приложение добавляется отдельно
+├── docs/          # общая документация и API contract
+├── compose.yaml   # общий запуск сервисов
+├── .env.example
+└── .gitignore
+```
+
+Python-команды (`pytest`, `uvicorn`, `alembic`) выполняются из `backend/`.
+Docker Compose запускается из корня repository.
 
 ## Архитектура системы
 
