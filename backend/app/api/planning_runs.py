@@ -169,6 +169,7 @@ def get_planning_run_kpis(
 @router.get("/{planning_run_id}/decision-plan")
 def get_planning_run_decision_plan(
     planning_run_id: int,
+    store_id: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     planning_run = db.get(PlanningRun, planning_run_id)
@@ -179,14 +180,24 @@ def get_planning_run_decision_plan(
             detail="Planning run not found",
         )
 
+    plan = planning_run.result.get("plan", [])
+
+    if store_id:
+        plan = [
+            plan_row
+            for plan_row in plan
+            if str(plan_row.get("store_id")) == store_id
+        ]
+
     decision_plan = build_decision_plan(
-        planning_run.result.get("plan", []),
+        plan,
         planning_date=planning_run.planning_date,
     )
 
     return {
         "planning_run_id": planning_run.id,
         "dataset_id": planning_run.dataset_id,
+        "store_id": store_id,
         **decision_plan,
     }
 

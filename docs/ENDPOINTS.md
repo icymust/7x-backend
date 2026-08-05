@@ -34,7 +34,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
 | `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
-| `GET` | `/api/planning-runs/{planning_run_id}/decision-plan` | Path: `planning_run_id` | Строит агрегированный rolling workforce decision plan на 90 дней от сохранённого `planning_date`. |
+| `GET` | `/api/planning-runs/{planning_run_id}/decision-plan` | Path: `planning_run_id`; optional Query: `store_id` | Строит rolling workforce plan на 90 дней. С `store_id` возвращает AI Suggestions только выбранного склада. |
 | `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с UAE calendar metadata, severity, coverage, required/available, shortage/surplus и recommendations count. |
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
 | `GET` | `/api/planning-runs/{planning_run_id}/notifications` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает urgent shortage, upcoming shortage, hiring start required и staff surplus alerts. |
@@ -169,6 +169,15 @@ Legacy flow продолжает использовать прежние вре�
 `plan` и строит действия на 90 календарных дней, включая `planning_date`.
 Planning Run не изменяется, а результат пересчитывается одинаково при каждом
 запросе.
+
+Для страницы конкретного склада frontend передаёт optional фильтр:
+
+```text
+GET /api/planning-runs/1/decision-plan?store_id=QED_DXB_01
+```
+
+Без `store_id` endpoint возвращает actions всех складов. Response всегда
+содержит поле `store_id`: выбранное значение или `null`.
 
 Горизонты:
 
