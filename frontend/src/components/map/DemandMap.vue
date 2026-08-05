@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import {
+  LngLatBounds,
   Map as MapLibreMap,
   Marker,
   NavigationControl,
@@ -14,9 +15,9 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import DatePicker from 'primevue/datepicker'
 import { useTheme } from '../../composables/useTheme'
 import { useWarehouseSelection } from '../../composables/useWarehouseSelection'
-import { ABU_DHABI_CENTER, ABU_DHABI_ZOOM, demandPoints } from '../../data/mapData'
+import { NETWORK_CENTER, NETWORK_DEFAULT_ZOOM, demandPoints } from '../../data/mapData'
 import type { DriverStatus, WarehouseProperties } from '../../data/warehouseData'
-import { warehouses } from '../../data/warehouseData'
+import { warehouses, warehousesWithCoordinates } from '../../data/warehouseData'
 import { getMonthlyDemandTotal } from '../../data/demandCalendarData'
 import { loadWarehouseIcons } from '../../utils/warehouseIcon'
 
@@ -191,6 +192,24 @@ function focusOn(center: [number, number]) {
   map.value?.flyTo({ center, zoom: FOCUS_ZOOM, speed: 0.9, curve: 1.3, essential: true })
 }
 
+// Frames every located warehouse on first load, rather than relying on the
+// static NETWORK_CENTER/NETWORK_DEFAULT_ZOOM fallback - self-corrects as the
+// network grows or shifts instead of going stale. Called once on initial
+// load only, not from addLayers() (which also re-runs on every dark/light
+// style swap) - re-fitting on a theme toggle would fight any panning/zooming
+// the user already did.
+function fitToWarehouses() {
+  const m = map.value
+  const located = warehousesWithCoordinates()
+  if (!m || located.length === 0) return
+
+  const bounds = located.reduce(
+    (b, f) => b.extend(f.geometry.coordinates as [number, number]),
+    new LngLatBounds(),
+  )
+  m.fitBounds(bounds, { padding: 72, duration: 0, maxZoom: 13 })
+}
+
 // The warehouse panel lives outside this component now (a sibling column,
 // not an overlay rendered here), so selecting a branch there can't call
 // focusOn directly - it bumps focusToken via the shared composable instead,
@@ -292,12 +311,15 @@ onMounted(() => {
   const m = new MapLibreMap({
     container: mapContainer.value,
     style: isDark.value ? DARK_STYLE : LIGHT_STYLE,
-    center: ABU_DHABI_CENTER,
-    zoom: ABU_DHABI_ZOOM,
+    center: NETWORK_CENTER,
+    zoom: NETWORK_DEFAULT_ZOOM,
   })
 
   m.addControl(new NavigationControl(), 'top-right')
-  m.on('load', addLayers)
+  m.on('load', () => {
+    fitToWarehouses()
+    addLayers()
+  })
   map.value = m
   ;(m as MapWithTrackResize)._trackResize = false
   createDemandChartMarkers()

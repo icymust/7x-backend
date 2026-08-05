@@ -42,6 +42,13 @@ export const demandPoints: FeatureCollection<Point, DemandPointProperties> = {
   })),
 }
 
-// City-wide view: downtown Abu Dhabi, zoomed to frame the whole emirate's urban area.
-export const ABU_DHABI_CENTER: [number, number] = [54.3705, 24.4764]
-export const ABU_DHABI_ZOOM = 11
+// Fallback view for when there's no real warehouse data to fit bounds to yet
+// (fresh DB, or a Planning Run predating coordinates). Calculated as the
+// bounding-box midpoint of the current 10-store network (Abu Dhabi/Dubai/
+// Sharjah): center = [(minLng+maxLng)/2, (minLat+maxLat)/2] over
+// lng 54.362-55.3903, lat 24.477-25.3395. Zoom is a manual estimate sized to
+// comfortably frame that ~100km x 96km spread with padding on a typical map
+// card - maps that actually have warehouse data call fitBounds() instead of
+// relying on this, so it self-corrects as the network grows or shifts.
+export const NETWORK_CENTER: [number, number] = [54.876, 24.908]
+export const NETWORK_DEFAULT_ZOOM = 9.5

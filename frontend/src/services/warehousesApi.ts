@@ -28,6 +28,43 @@ interface PlanningRunDetailResponse {
   plan: BackendPlanRow[]
 }
 
+// Backend-computed status, aggregated across every day in the requested
+// month (or the whole Planning Run if no month is passed): critical if any
+// day was critical, else shortage if any day had a shortage, else surplus if
+// any day had one, else balanced. This is the authoritative driver-status
+// classification now - real, not derived client-side from a single snapshot.
+export type BackendStoreStatus = 'critical' | 'shortage' | 'surplus' | 'balanced'
+
+export interface BackendStore {
+  store_id: string
+  store_name: string | null
+  lat: number | null
+  lng: number | null
+  status: BackendStoreStatus
+}
+
+interface PlanningRunStoresResponse {
+  planning_run_id: number
+  dataset_id: number
+  month: string | null
+  store_count: number
+  stores: BackendStore[]
+}
+
+// The warehouse map/list resource - store_id, name, coordinates and an
+// overall status, one row per store. Omits `month` to get status aggregated
+// across the whole Planning Run rather than one calendar month.
+export async function fetchStores(): Promise<BackendStore[]> {
+  const planningRunId = await fetchLatestPlanningRunId()
+
+  if (planningRunId === null) {
+    return []
+  }
+
+  const response = await apiGet<PlanningRunStoresResponse>(`/api/planning-runs/${planningRunId}/stores`)
+  return response.stores
+}
+
 // Backend has no dedicated "warehouses" endpoint - a store only exists as a
 // byproduct of an uploaded Planning Run. Take the most recently created run
 // and return its plan rows for the caller to collapse into one snapshot per

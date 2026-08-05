@@ -1,13 +1,21 @@
 import type { Feature, FeatureCollection, Point } from 'geojson'
-import { ABU_DHABI_CENTER } from './mapData'
-import { fetchLatestPlanRows, latestRowPerStore, type BackendPlanRow } from '../services/warehousesApi'
+import { NETWORK_CENTER } from './mapData'
+import {
+  fetchLatestPlanRows,
+  fetchStores,
+  latestRowPerStore,
+  type BackendPlanRow,
+  type BackendStore,
+} from '../services/warehousesApi'
 import { hashString, mulberry32 } from '../utils/seededRandom'
 
 export type WarehouseStatus = 'Operational' | 'Under Expansion' | 'Limited Capacity' | 'Unknown'
 
 // Driver-capacity status: how courier headcount is tracking against the
-// orders they're handling. Derived from courierLoadPercent rather than
-// hand-authored, so it can never drift out of sync with that number.
+// orders they're handling. Backend computes this now (aggregated across
+// every day of the Planning Run: critical > shortage > surplus > balanced,
+// see GET .../stores) - the value set matches BackendStoreStatus exactly, so
+// it's used as-is rather than re-derived from a single day's snapshot.
 export type DriverStatus = 'surplus' | 'balanced' | 'shortage' | 'critical'
 
 export const DRIVER_STATUS_COLOR: Record<DriverStatus, string> = {
@@ -22,13 +30,6 @@ export const DRIVER_STATUS_LABEL: Record<DriverStatus, string> = {
   balanced: 'Balanced Capacity',
   shortage: 'High Utilization',
   critical: 'Driver Shortage',
-}
-
-function computeDriverStatus(courierLoadPercent: number): DriverStatus {
-  if (courierLoadPercent < 60) return 'surplus'
-  if (courierLoadPercent <= 75) return 'balanced'
-  if (courierLoadPercent <= 90) return 'shortage'
-  return 'critical'
 }
 
 export interface WarehouseProperties {
@@ -77,34 +78,50 @@ function courierLoadPercentFor(row: BackendPlanRow): number {
     : 100
 }
 
-function toWarehouseFeature(row: BackendPlanRow): Feature<Point, WarehouseProperties> {
-  const courierLoadPercent = courierLoadPercentFor(row)
+// `/stores` is the authoritative source for identity/coordinates/status;
+// `/planning-runs/{id}` plan rows are the only source for courier counts.
+// Merge them per store rather than picking one - each has data the other
+// doesn't.
+function toWarehouseFeature(store: BackendStore, latestRow: BackendPlanRow | undefined): Feature<Point, WarehouseProperties> {
+  const courierLoadPercent = latestRow ? courierLoadPercentFor(latestRow) : 0
+  // lat/lng are only null for a Planning Run created before the backend
+  // started returning coordinates (see docs/ENDPOINTS.md "Warehouse map") -
+  // falls back to [0, 0] for those, same as before.
+  const coordinates: [number, number] =
+    store.lat != null && store.lng != null ? [store.lng, store.lat] : [0, 0]
 
   return {
     type: 'Feature',
-    // Store_Metadata requires latitude/longitude on upload, but the backend
-    // drops them before they reach any API response (verified against
-    // capacity.py's plan-row builder and every test fixture) - so there's no
-    // real coordinate to place on the map yet.
-    geometry: { type: 'Point', coordinates: [0, 0] },
+    geometry: { type: 'Point', coordinates },
     properties: {
-      storeId: row.store_id,
-      name: row.store_name ?? row.store_id,
-      zone: row.zone ?? row.emirate ?? '',
-      capacitySqm: mockCapacitySqm(row.store_id),
+      storeId: store.store_id,
+      name: store.store_name ?? store.store_id,
+      zone: latestRow?.zone ?? latestRow?.emirate ?? '',
+      capacitySqm: mockCapacitySqm(store.store_id),
       utilizationPercent: 0,
       activeShipments: 0,
       staff: 0,
       status: 'Unknown',
       isMainBranch: false,
-      couriers: row.available_permanent + row.available_outsourced,
-      avgCourierKpi: mockAvgCourierKpi(row.store_id),
+      couriers: latestRow ? latestRow.available_permanent + latestRow.available_outsourced : 0,
+      avgCourierKpi: mockAvgCourierKpi(store.store_id),
       courierLoadPercent,
-      driverStatus: computeDriverStatus(courierLoadPercent),
+      driverStatus: store.status,
       currentMonthDemand: 0,
       nextMonthDemand: 0,
     },
   }
+}
+
+// A [0, 0] coordinate means the backend had no lat/lng for that store (see
+// toWarehouseFeature) - not a real location, so map views that fit their
+// bounds to the warehouse list should exclude it rather than let a single
+// placeholder point collapse the bounds toward the Gulf of Guinea.
+export function warehousesWithCoordinates(): Feature<Point, WarehouseProperties>[] {
+  return warehouses.features.filter((f) => {
+    const [lng, lat] = f.geometry.coordinates as [number, number]
+    return !(lng === 0 && lat === 0)
+  })
 }
 
 export const warehouses: FeatureCollection<Point, WarehouseProperties> = {
@@ -134,21 +151,21 @@ const EMPTY_WAREHOUSE: WarehouseProperties = {
 }
 
 export let mainBranchWarehouse: WarehouseProperties = EMPTY_WAREHOUSE
-export let mainBranchCoords: [number, number] = ABU_DHABI_CENTER
+export let mainBranchCoords: [number, number] = NETWORK_CENTER
 
 // Fetches the latest Planning Run from the backend and populates `warehouses`
 // in place. Call once at app startup (see main.ts) - components read
 // `warehouses`/`mainBranchWarehouse`/`mainBranchCoords` synchronously, so
 // this needs to resolve before the app mounts rather than be reactive.
 export async function loadWarehouses(): Promise<void> {
-  const rows = await fetchLatestPlanRows()
-  const latestRows = latestRowPerStore(rows)
+  const [stores, rows] = await Promise.all([fetchStores(), fetchLatestPlanRows()])
+  const latestRowByStore = new Map(latestRowPerStore(rows).map((row) => [row.store_id, row]))
 
-  warehouses.features = latestRows.map(toWarehouseFeature)
+  warehouses.features = stores.map((store) => toWarehouseFeature(store, latestRowByStore.get(store.store_id)))
 
   const mainFeature = warehouses.features[0]
   mainBranchWarehouse = mainFeature?.properties ?? EMPTY_WAREHOUSE
-  mainBranchCoords = (mainFeature?.geometry.coordinates as [number, number] | undefined) ?? ABU_DHABI_CENTER
+  mainBranchCoords = (mainFeature?.geometry.coordinates as [number, number] | undefined) ?? NETWORK_CENTER
 }
 
 export interface DemandHistoryPoint {
