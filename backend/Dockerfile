@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY app ./app
+COPY model_artifacts ./model_artifacts
 
 EXPOSE 8000
 

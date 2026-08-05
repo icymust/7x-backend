@@ -1,6 +1,8 @@
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -8,6 +10,95 @@ from app.main import app
 client = TestClient(app)
 
 SAMPLE_FILE = Path(__file__).parent.parent / "sample_data" / "sample_dataset.xlsx"
+EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def build_official_workbook(*, include_roster: bool = True) -> bytes:
+    store_metadata = pd.DataFrame(
+        [
+            {
+                "store_id": "QED_DXB_01",
+                "store_name": "Al Quoz Dark Store",
+                "emirate": "Dubai",
+                "zone": "Al Quoz",
+                "lat": 25.1348,
+                "lng": 55.2308,
+                "target_utilisation_pct": 16,
+                "base_dph": 2.0,
+            }
+        ]
+    )
+    demand_forecast = pd.DataFrame(
+        [
+            {
+                "store_id": "QED_DXB_01",
+                "store_name": "Al Quoz Dark Store",
+                "date": "2026-05-01",
+                "week_number": 1,
+                "day_name": "Friday",
+                "is_weekend": "Yes",
+                "time_slot": "08:00",
+                "forecast_volume": 20,
+                "actual_volume": 21,
+                "forecast_error": 1,
+            },
+            {
+                "store_id": "QED_DXB_01",
+                "store_name": "Al Quoz Dark Store",
+                "date": "2026-05-01",
+                "week_number": 1,
+                "day_name": "Friday",
+                "is_weekend": "Yes",
+                "time_slot": "08:30",
+                "forecast_volume": 4,
+                "actual_volume": 4,
+                "forecast_error": 0,
+            }
+        ]
+    )
+    courier_roster = pd.DataFrame(
+        [
+            {
+                "courier_id": "C3001",
+                "store_id": "QED_DXB_01",
+                "employment_type": "FTE",
+                "shift_start": "08:00",
+                "shift_end": "17:00",
+                "working_hours": 8,
+                "weekly_off_day": "Saturday",
+                "avg_delivery_hr": 2,
+                "status": "Active",
+            }
+        ]
+    )
+
+    buffer = BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame({"README": ["Dataset description"]}).to_excel(
+            writer,
+            sheet_name="README",
+            index=False,
+        )
+        store_metadata.to_excel(
+            writer,
+            sheet_name="Store_Metadata",
+            index=False,
+        )
+        demand_forecast.to_excel(
+            writer,
+            sheet_name="Demand_Forecast",
+            index=False,
+        )
+
+        if include_roster:
+            courier_roster.to_excel(
+                writer,
+                sheet_name="Courier_Roster",
+                index=False,
+            )
+
+    return buffer.getvalue()
 
 
 def test_calculates_plan_from_excel(monkeypatch):
@@ -63,3 +154,85 @@ def test_calculates_plan_from_excel(monkeypatch):
     assert calendar[0]["shortage_courier_slots"] == 111
     assert result["dataset_id"] == 10
     assert result["planning_run_id"] == 20
+
+
+def test_calculates_plan_from_official_workbook(monkeypatch):
+    saved = {}
+
+    def fake_save_planning_result(*args, **kwargs):
+        saved.update(kwargs)
+        return SimpleNamespace(id=30), SimpleNamespace(id=40)
+
+    monkeypatch.setattr(
+        "app.api.planning.save_planning_result",
+        fake_save_planning_result,
+    )
+
+    response = client.post(
+        "/api/planning/calculate?planning_date=2026-04-01",
+        files={
+            "file": (
+                "official.xlsx",
+                build_official_workbook(),
+                EXCEL_CONTENT_TYPE,
+            )
+        },
+    )
+
+    assert response.status_code == 200
+
+    result = response.json()
+    plan_row = result["plan"][0]
+
+    assert result["dataset_type"] == "workforce_multi_sheet"
+    assert result["target_utilization"] == 1.0
+    assert result["model_version"] == "official-daily-forecast-baseline-v1"
+    assert result["planning_grain"] == "store_day"
+    assert result["row_count"] == 1
+    assert len(result["assumptions"]) == 5
+    assert {
+        warning["code"] for warning in result["validation_warnings"]
+    } == {"suspicious_target_utilization_percent"}
+
+    assert plan_row["store_name"] == "Al Quoz Dark Store"
+    assert plan_row["emirate"] == "Dubai"
+    assert plan_row["zone"] == "Al Quoz"
+    assert plan_row["planning_grain"] == "store_day"
+    assert plan_row["forecast_shipments"] == 24
+    assert plan_row["required_courier_hours"] == 12
+    assert plan_row["available_courier_hours"] == 8
+    assert plan_row["required_couriers"] == 2
+    assert plan_row["available_couriers"] == 1
+    assert plan_row["shortage"] == 1
+    assert plan_row["recommendation"]["add_outsourced"] == 1
+    assert result["calendar"][0]["is_weekend"] is True
+    assert result["calendar"][0]["coverage_percent"] == 66.7
+
+    assert saved["target_utilization"] == 1.0
+    assert saved["model_version"] == "official-daily-forecast-baseline-v1"
+    assert len(saved["normalized_data"]) == 1
+
+
+def test_rejects_invalid_official_workbook():
+    response = client.post(
+        "/api/planning/calculate",
+        files={
+            "file": (
+                "official.xlsx",
+                build_official_workbook(include_roster=False),
+                EXCEL_CONTENT_TYPE,
+            )
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "dataset_type": "workforce_multi_sheet",
+        "errors": [
+            {
+                "code": "missing_sheets",
+                "sheets": ["courier_roster"],
+            }
+        ],
+        "warnings": [],
+    }

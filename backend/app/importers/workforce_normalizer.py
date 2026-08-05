@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 
 from app.business_rules import (
+    AVERAGE_DELIVERIES_PER_COURIER_DAY,
+    AVERAGE_WORKING_HOURS_PER_COURIER,
     BREAK_HOURS,
+    DELIVERIES_PER_COURIER_HOUR,
     DELIVERIES_PER_COURIER_BUCKET,
     OFFICIAL_TARGET_UTILIZATION,
     TIME_BUCKET_HOURS,
@@ -56,7 +59,29 @@ NORMALIZATION_ASSUMPTIONS = [
             "target_utilization_percent values remain raw metadata only."
         ),
     },
+    {
+        "code": "daily_planning_grain",
+        "description": (
+            "Demand and workforce capacity are aggregated by store and day "
+            "for the hackathon MVP. Managers assign couriers to shifts."
+        ),
+    },
+    {
+        "code": "daily_target_mix_average",
+        "description": (
+            "Required daily couriers use the 60% FTE and 40% FTC target mix, "
+            "equal to 8.8 working hours per courier per day."
+        ),
+    },
 ]
+
+DAILY_PLANNING_ASSUMPTION_CODES = {
+    "on_leave_applies_to_full_horizon",
+    "recruiter_productivity_rule",
+    "official_target_utilization_is_one",
+    "daily_planning_grain",
+    "daily_target_mix_average",
+}
 
 
 class WorkforceNormalizationError(ValueError):
@@ -68,7 +93,9 @@ class WorkforceNormalizationError(ValueError):
 @dataclass
 class WorkforceNormalizationResult:
     capacity_rows: pd.DataFrame
+    daily_capacity_rows: pd.DataFrame
     assumptions: list[dict]
+    daily_assumptions: list[dict]
     validation_warnings: list[dict]
 
 
@@ -176,6 +203,103 @@ def _add_courier_availability(
             | (shift_day_names == str(courier.weekly_off_day))
         )
         capacity_rows.loc[unavailable_mask, unavailable_column] += 1
+
+
+def _add_daily_courier_availability(
+    daily_rows: pd.DataFrame,
+    courier_roster: pd.DataFrame,
+) -> None:
+    count_columns = [
+        "available_permanent",
+        "available_outsourced",
+        "permanent_unavailable",
+        "outsourced_unavailable",
+    ]
+
+    for column in count_columns:
+        daily_rows[column] = 0
+
+    day_names = daily_rows["date"].dt.day_name()
+
+    for courier in courier_roster.itertuples(index=False):
+        store_mask = daily_rows["store_id"].eq(str(courier.store_id))
+
+        if courier.employment_type == "FTE":
+            available_column = "available_permanent"
+            unavailable_column = "permanent_unavailable"
+        else:
+            available_column = "available_outsourced"
+            unavailable_column = "outsourced_unavailable"
+
+        daily_rows.loc[store_mask, available_column] += 1
+
+        unavailable_mask = store_mask & (
+            (courier.status == "On Leave")
+            | day_names.eq(str(courier.weekly_off_day))
+        )
+        daily_rows.loc[unavailable_mask, unavailable_column] += 1
+
+
+def _build_daily_capacity_rows(
+    capacity_rows: pd.DataFrame,
+    courier_roster: pd.DataFrame,
+) -> pd.DataFrame:
+    sum_columns = [
+        "forecast_shipments",
+        "actual_shipments",
+    ]
+    first_columns = [
+        "store_name",
+        "emirate",
+        "zone",
+        "latitude",
+        "longitude",
+        "day_name",
+        "is_weekend",
+        "week_number",
+        "base_productivity_per_hour",
+        "target_utilization_percent",
+    ]
+    aggregations = {
+        column: "sum"
+        for column in sum_columns
+        if column in capacity_rows.columns
+    }
+    aggregations.update(
+        {
+            column: "first"
+            for column in first_columns
+            if column in capacity_rows.columns
+        }
+    )
+
+    daily_rows = (
+        capacity_rows.groupby(["store_id", "date"], as_index=False)
+        .agg(aggregations)
+        .sort_values(["date", "store_id"], ignore_index=True)
+    )
+    daily_rows["time_bucket"] = daily_rows["date"]
+    daily_rows["planning_grain"] = "store_day"
+    daily_rows["deliveries_per_courier_hour"] = (
+        DELIVERIES_PER_COURIER_HOUR
+    )
+    daily_rows["average_working_hours_per_courier"] = (
+        AVERAGE_WORKING_HOURS_PER_COURIER
+    )
+    daily_rows["productivity_per_courier"] = (
+        AVERAGE_DELIVERIES_PER_COURIER_DAY
+    )
+    daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
+
+    if "actual_shipments" in daily_rows.columns:
+        daily_rows["forecast_error"] = (
+            daily_rows["actual_shipments"]
+            - daily_rows["forecast_shipments"]
+        )
+
+    _add_daily_courier_availability(daily_rows, courier_roster)
+
+    return daily_rows
 
 
 def normalize_workforce_workbook(
@@ -294,8 +418,19 @@ def normalize_workforce_workbook(
         + remaining_columns
     ]
 
+    daily_capacity_rows = _build_daily_capacity_rows(
+        capacity_rows,
+        courier_roster,
+    )
+
     return WorkforceNormalizationResult(
         capacity_rows=capacity_rows,
+        daily_capacity_rows=daily_capacity_rows,
         assumptions=[dict(assumption) for assumption in NORMALIZATION_ASSUMPTIONS],
+        daily_assumptions=[
+            dict(assumption)
+            for assumption in NORMALIZATION_ASSUMPTIONS
+            if assumption["code"] in DAILY_PLANNING_ASSUMPTION_CODES
+        ],
         validation_warnings=validation.warnings,
     )

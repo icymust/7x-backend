@@ -29,7 +29,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | Method | Endpoint | Параметры | Что делает |
 |---|---|---|---|
 | `POST` | `/api/datasets/preview` | Multipart: `file` (`.xlsx`) | Распознаёт legacy или официальный multi-sheet Excel, валидирует его и возвращает mapping, количество строк и preview. Файл не сохраняется. |
-| `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` в диапазоне `(0, 1]`, default `0.85`; `planning_date` optional, default — текущая дата backend | Валидирует Excel, рассчитывает plan и calendar, сохраняет Dataset и Planning Run. Возвращает результат, `dataset_id` и `planning_run_id`. |
+| `POST` | `/api/planning/calculate` | Multipart: `file`; Query: `target_utilization` для legacy Excel, default `0.85`; `planning_date` optional | Валидирует Excel. Для официального файла агрегирует заказы и workforce по магазину и дню, рассчитывает plan и calendar, сохраняет Dataset и Planning Run. |
 | `GET` | `/api/planning-runs` | Query: `limit` от `1` до `100`, default `20`; `offset` от `0` | Возвращает `total` и Planning Runs от нового к старому. |
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id` | Возвращает отсортированные уникальные `store_id` и `store_count` для frontend dropdown. |
@@ -62,6 +62,30 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 `original_columns`, `column_mapping`, canonical `columns`, полный `row_count` и
 не более пяти строк в `preview`. Проверяется весь workbook, но capacity здесь не
 рассчитывается и данные в PostgreSQL не сохраняются.
+
+## Planning calculate
+
+Для официального workbook endpoint выполняет loader, validation, суточную
+агрегацию и Capacity Engine. Одна строка `plan` соответствует одному магазину
+за один день. Исходные 30-минутные строки суммируются, но сам Excel не
+изменяется. Query-параметр `target_utilization` применяется только к legacy
+Excel.
+
+Official response дополнительно содержит:
+
+- `dataset_type: workforce_multi_sheet`;
+- `model_version: official-daily-forecast-baseline-v1`;
+- `planning_grain: store_day`;
+- normalization `assumptions` и `validation_warnings`;
+- `store_name`, `emirate` и `zone` в каждой plan row;
+- дневные `required_courier_hours`, `available_courier_hours` и
+  `available_delivery_capacity`;
+- Friday/Saturday weekend metadata из Dataset.
+
+Блокирующая проблема одного из трёх листов возвращает `422`. Warnings не
+останавливают расчёт. Нормализованные данные сохраняются в `Dataset`, а полный
+результат — в новом `PlanningRun`. Legacy response и расчёты сохранены без
+изменения.
 
 ## Важное поведение
 
@@ -97,17 +121,17 @@ Endpoints `kpis`, `calendar`, `recommendations` и `notifications` поддер�
 }
 ```
 
-Backend использует Saturday/Sunday как календарный UAE weekend по умолчанию.
-Эти поля являются информационными и сами не изменяют forecast, capacity или
-availability. Справочник public holidays пока пуст и будет заполнен только
-после получения официально подтверждённых дат.
+Legacy flow использует Saturday/Sunday как календарный UAE weekend по
+умолчанию. Official flow использует подтверждённые Friday/Saturday значения из
+Dataset. Эти поля являются информационными и сами не изменяют forecast,
+capacity или availability. Справочник public holidays пока пуст.
 
 ## KPI
 
 `GET /api/planning-runs/{planning_run_id}/kpis` считает показатели только по
-строкам, попавшим в выбранные фильтры. `required`, `available`, `shortage` и
-`surplus` являются courier slots по временным интервалам, а не количеством
-уникальных людей.
+строкам, попавшим в выбранные фильтры. Для official flow строки имеют grain
+`store_day`, а coverage считается по требуемым и доступным courier-hours.
+Legacy flow продолжает использовать прежние временные интервалы.
 
 - `coverage_percent` — доля покрытого спроса, максимум 100%;
 - `understaffed_buckets` — интервалы с дефицитом;
