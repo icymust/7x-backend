@@ -24,9 +24,12 @@ from app.importers.workforce_loader import (
 from app.importers.workforce_mapper import canonical_workforce_sheet_name
 from app.importers.workforce_normalizer import (
     WorkforceNormalizationError,
+    build_future_daily_capacity_rows,
     normalize_workforce_workbook,
 )
 from app.ml.catboost_forecast import apply_catboost_to_daily_capacity
+from app.ml.demand_features import build_demand_training_data
+from app.ml.future_forecast import forecast_future_demand
 from app.services.planning_storage import save_planning_result
 
 router = APIRouter(prefix="/api/planning", tags=["planning"])
@@ -93,6 +96,7 @@ def _load_legacy_dataframe(
 
 def _load_workforce_dataframe(
     content: bytes,
+    planning_date: date,
 ) -> tuple[pd.DataFrame, list, list, dict]:
     try:
         workbook = load_workforce_workbook(content)
@@ -121,20 +125,50 @@ def _load_workforce_dataframe(
             detail="Unable to read Excel file",
         ) from error
 
-    prediction = apply_catboost_to_daily_capacity(
-        workbook,
-        normalization.daily_capacity_rows,
-    )
+    historical_date_to = pd.Timestamp(
+        normalization.daily_capacity_rows["date"].max()
+    ).date()
 
-    return (
-        prediction.dataframe,
-        normalization.daily_assumptions,
-        normalization.validation_warnings,
-        {
+    if planning_date > historical_date_to:
+        history = build_demand_training_data(workbook)
+        prediction = forecast_future_demand(
+            history,
+            horizon_start=planning_date,
+        )
+        dataframe = build_future_daily_capacity_rows(
+            workbook,
+            prediction.dataframe,
+        )
+        prediction_metadata = {
+            "forecast_mode": "future_90_days",
             "prediction_source": prediction.prediction_source,
             "model_version": prediction.model_version,
             "fallback_reason": prediction.fallback_reason,
-        },
+            "historical_date_to": prediction.historical_date_to,
+            "horizon_start": prediction.horizon_start,
+            "horizon_end": prediction.horizon_end,
+        }
+    else:
+        prediction = apply_catboost_to_daily_capacity(
+            workbook,
+            normalization.daily_capacity_rows,
+        )
+        dataframe = prediction.dataframe
+        prediction_metadata = {
+            "forecast_mode": "historical_workbook",
+            "prediction_source": prediction.prediction_source,
+            "model_version": prediction.model_version,
+            "fallback_reason": prediction.fallback_reason,
+            "historical_date_to": historical_date_to.isoformat(),
+            "horizon_start": None,
+            "horizon_end": None,
+        }
+
+    return (
+        dataframe,
+        normalization.daily_assumptions,
+        normalization.validation_warnings,
+        prediction_metadata,
     )
 
 
@@ -154,10 +188,11 @@ async def calculate_plan(
     content = await file.read()
     sheets = _read_sheet_names(content)
     is_workforce = _is_workforce_workbook(sheets)
+    used_planning_date = planning_date or date.today()
 
     if is_workforce:
         dataframe, assumptions, validation_warnings, prediction = (
-            _load_workforce_dataframe(content)
+            _load_workforce_dataframe(content, used_planning_date)
         )
         used_target_utilization = OFFICIAL_TARGET_UTILIZATION
         model_version = prediction["model_version"]
@@ -171,8 +206,6 @@ async def calculate_plan(
 
     rows = dataframe.to_dict(orient="records")
     plan = calculate_capacity_plan(rows, used_target_utilization)
-
-    used_planning_date = planning_date or date.today()
 
     for plan_row in plan:
         plan_row["recommendation"] = build_recommendation(
@@ -209,6 +242,10 @@ async def calculate_plan(
             "planning_grain": "store_day",
             "prediction_source": prediction["prediction_source"],
             "prediction_fallback_reason": prediction["fallback_reason"],
+            "forecast_mode": prediction["forecast_mode"],
+            "historical_date_to": prediction["historical_date_to"],
+            "horizon_start": prediction["horizon_start"],
+            "horizon_end": prediction["horizon_end"],
             "row_count": len(plan),
             "assumptions": assumptions,
             "validation_warnings": validation_warnings,
