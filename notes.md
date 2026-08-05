@@ -229,8 +229,18 @@ multi-sheet файла. Он:
 core-колонки существуют, а mapping не создаёт повторяющиеся canonical columns.
 
 Loader пока не объединяет листы, не рассчитывает capacity и не подключён к API.
-Проверка null values, ключей, допустимых статусов, shift consistency и
-cross-sheet integrity будет выполнена отдельным workforce validator.
+`app/importers/workforce_validator.py` отдельно проверяет null values, ключи,
+числа, даты, 30-минутные slots, forecast consistency, FTE/FTC, courier status,
+weekly off, shift times и cross-sheet store integrity. Блокирующие проблемы
+возвращаются в `errors`, а неоднозначные данные — в `warnings`.
+
+На официальном XLSX validator возвращает `is_valid: true`, `0 errors` и четыре
+группы warnings:
+
+- один store-level productivity outlier (`QED_DXB_02`);
+- suspicious target utilization для всех 10 stores;
+- `working_hours` превышает shift window у 16 couriers;
+- отсутствует leave period у 6 couriers со status `On Leave`.
 
 ## Что уже сделано в backend
 
@@ -239,6 +249,7 @@ cross-sheet integrity будет выполнена отдельным workforce
 - Загрузка `.xlsx` и preview листов, колонок и первых строк.
 - Нормализация названий колонок и mapping aliases во внутренний формат backend.
 - Mapping и multi-sheet loader официального workforce Dataset.
+- Workforce validator для трёх листов и cross-sheet связей.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -298,4 +309,4 @@ cross-sheet integrity будет выполнена отдельным workforce
 - Dockerfile и Compose для запуска FastAPI + PostgreSQL одной командой;
   Alembic автоматически применяет миграции перед Uvicorn.
 - Frontend API contract в `docs/ENDPOINTS.md`.
-- Автоматические тесты pytest: 80 тестов проходят.
+- Автоматические тесты pytest: 85 тестов проходят.
