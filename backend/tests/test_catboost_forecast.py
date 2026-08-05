@@ -1,8 +1,11 @@
+from pathlib import Path
+
 import pandas as pd
 
 from app.ml.catboost_forecast import (
     MODEL_VERSION,
     PREDICTION_COLUMN,
+    apply_catboost_to_daily_capacity,
     backtest_catboost_model,
     predict_daily_demand,
     train_catboost_model,
@@ -59,3 +62,19 @@ def test_backtests_on_future_dates_only():
     assert len(result.predictions) == 4
     assert result.baseline_metrics["row_count"] == 4
     assert result.model_metrics["row_count"] == 4
+
+
+def test_falls_back_to_excel_when_model_is_missing():
+    dataframe = create_daily_training_data().head(2)
+
+    result = apply_catboost_to_daily_capacity(
+        object(),
+        dataframe,
+        model_path=Path("missing-model.cbm"),
+    )
+
+    assert result.prediction_source == "excel_baseline"
+    assert result.fallback_reason == "catboost_unavailable_or_incompatible"
+    assert result.dataframe[PREDICTION_COLUMN].tolist() == dataframe[
+        "forecast_shipments"
+    ].tolist()

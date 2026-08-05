@@ -125,9 +125,13 @@ def calculate_capacity_plan(
     plan = []
 
     for row in rows:
+        planning_demand_shipments = float(
+            row.get("predicted_shipments", row["forecast_shipments"])
+        )
+
         if row.get("planning_grain") == "store_day":
             capacity = calculate_daily_capacity(
-                forecast_shipments=row["forecast_shipments"],
+                forecast_shipments=planning_demand_shipments,
                 available_permanent=row["available_permanent"],
                 available_outsourced=row["available_outsourced"],
                 permanent_unavailable=row.get("permanent_unavailable", 0),
@@ -154,6 +158,7 @@ def calculate_capacity_plan(
             "store_id": str(row["store_id"]),
             "time_bucket": time_bucket,
             "forecast_shipments": float(row["forecast_shipments"]),
+            "planning_demand_shipments": planning_demand_shipments,
             "available_permanent": int(row["available_permanent"]),
             "available_outsourced": int(row["available_outsourced"]),
             "productivity_per_courier": float(row["productivity_per_courier"]),
@@ -176,9 +181,20 @@ def calculate_capacity_plan(
                 }
             )
 
-        for numeric_field in ["actual_shipments", "forecast_error"]:
+        for numeric_field in [
+            "actual_shipments",
+            "forecast_error",
+            "baseline_forecast_shipments",
+            "predicted_shipments",
+            "prediction_correction",
+            "prediction_error",
+        ]:
             if numeric_field in row and row[numeric_field] is not None:
                 plan_row[numeric_field] = float(row[numeric_field])
+
+        for text_field in ["prediction_source", "model_version"]:
+            if text_field in row and row[text_field] is not None:
+                plan_row[text_field] = str(row[text_field])
 
         for field in ["store_name", "emirate", "zone"]:
             if field in row and row[field] is not None:

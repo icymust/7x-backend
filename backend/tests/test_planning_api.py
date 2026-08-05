@@ -186,8 +186,10 @@ def test_calculates_plan_from_official_workbook(monkeypatch):
 
     assert result["dataset_type"] == "workforce_multi_sheet"
     assert result["target_utilization"] == 1.0
-    assert result["model_version"] == "official-daily-forecast-baseline-v1"
+    assert result["model_version"] == "catboost-daily-residual-v1"
     assert result["planning_grain"] == "store_day"
+    assert result["prediction_source"] == "catboost"
+    assert result["prediction_fallback_reason"] is None
     assert result["row_count"] == 1
     assert len(result["assumptions"]) == 5
     assert {
@@ -199,17 +201,22 @@ def test_calculates_plan_from_official_workbook(monkeypatch):
     assert plan_row["zone"] == "Al Quoz"
     assert plan_row["planning_grain"] == "store_day"
     assert plan_row["forecast_shipments"] == 24
-    assert plan_row["required_courier_hours"] == 12
+    assert plan_row["baseline_forecast_shipments"] == 24
+    assert plan_row["predicted_shipments"] > 24
+    assert plan_row["planning_demand_shipments"] == plan_row[
+        "predicted_shipments"
+    ]
+    assert plan_row["required_courier_hours"] > 12
     assert plan_row["available_courier_hours"] == 8
     assert plan_row["required_couriers"] == 2
     assert plan_row["available_couriers"] == 1
     assert plan_row["shortage"] == 1
     assert plan_row["recommendation"]["add_outsourced"] == 1
     assert result["calendar"][0]["is_weekend"] is True
-    assert result["calendar"][0]["coverage_percent"] == 66.7
+    assert result["calendar"][0]["coverage_percent"] < 66.7
 
     assert saved["target_utilization"] == 1.0
-    assert saved["model_version"] == "official-daily-forecast-baseline-v1"
+    assert saved["model_version"] == "catboost-daily-residual-v1"
     assert len(saved["normalized_data"]) == 1
 
 

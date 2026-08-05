@@ -537,7 +537,21 @@ WAPE improvement: 0.0066 percentage points
 Улучшение небольшое, но измеримое. Финальная модель после backtest переобучена
 на всех 910 historical store-days и сохранена как
 `model_artifacts/demand_forecast.cbm`. Dataset синтетический, поэтому метрики не
-гарантируют production accuracy. Модель ещё не подключена к `/calculate`.
+гарантируют production accuracy.
+
+Official `/calculate` загружает готовую модель и для каждого store-day
+возвращает:
+
+```text
+baseline_forecast_shipments = исходный прогноз Excel
+predicted_shipments = baseline + CatBoost correction
+planning_demand_shipments = значение, по которому backend считает couriers
+prediction_source = catboost
+```
+
+Если модель отсутствует или несовместима, `predicted_shipments` становится
+равным Excel forecast, а `prediction_source` — `excel_baseline`. Повторное
+обучение при загрузке Excel не запускается.
 
 ## Что уже сделано в backend
 
@@ -552,6 +566,7 @@ WAPE improvement: 0.0066 percentage points
 - Workforce normalizer сохраняет исходные 30-минутные строки и формирует
   основной daily plan: FTE/FTC, 8/10 рабочих часов, weekly off и leave.
 - CatBoost daily demand model обучена и проверена относительно Excel baseline.
+- CatBoost подключена к official `/calculate` с безопасным Excel fallback.
 - Валидация пропусков, дат, чисел, отрицательных значений, productivity,
   дубликатов store/time и количества недоступных курьеров.
 - Генератор искусственного Excel для работы до получения официального файла.
@@ -617,4 +632,4 @@ WAPE improvement: 0.0066 percentage points
 - Frontend API contract в `docs/ENDPOINTS.md`.
 - ML training-data builder с leakage-safe lag/rolling features и time split.
 - CLI для оценки forecast baseline по MAE, bias и WAPE.
-- Автоматические тесты pytest: 104 теста проходят.
+- Автоматические тесты pytest: 105 тестов проходят.

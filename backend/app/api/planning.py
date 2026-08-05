@@ -26,6 +26,7 @@ from app.importers.workforce_normalizer import (
     WorkforceNormalizationError,
     normalize_workforce_workbook,
 )
+from app.ml.catboost_forecast import apply_catboost_to_daily_capacity
 from app.services.planning_storage import save_planning_result
 
 router = APIRouter(prefix="/api/planning", tags=["planning"])
@@ -90,7 +91,9 @@ def _load_legacy_dataframe(
     return dataframe
 
 
-def _load_workforce_dataframe(content: bytes) -> tuple[pd.DataFrame, list, list]:
+def _load_workforce_dataframe(
+    content: bytes,
+) -> tuple[pd.DataFrame, list, list, dict]:
     try:
         workbook = load_workforce_workbook(content)
         normalization = normalize_workforce_workbook(workbook)
@@ -118,10 +121,20 @@ def _load_workforce_dataframe(content: bytes) -> tuple[pd.DataFrame, list, list]
             detail="Unable to read Excel file",
         ) from error
 
-    return (
+    prediction = apply_catboost_to_daily_capacity(
+        workbook,
         normalization.daily_capacity_rows,
+    )
+
+    return (
+        prediction.dataframe,
         normalization.daily_assumptions,
         normalization.validation_warnings,
+        {
+            "prediction_source": prediction.prediction_source,
+            "model_version": prediction.model_version,
+            "fallback_reason": prediction.fallback_reason,
+        },
     )
 
 
@@ -143,15 +156,16 @@ async def calculate_plan(
     is_workforce = _is_workforce_workbook(sheets)
 
     if is_workforce:
-        dataframe, assumptions, validation_warnings = (
+        dataframe, assumptions, validation_warnings, prediction = (
             _load_workforce_dataframe(content)
         )
         used_target_utilization = OFFICIAL_TARGET_UTILIZATION
-        model_version = "official-daily-forecast-baseline-v1"
+        model_version = prediction["model_version"]
     else:
         dataframe = _load_legacy_dataframe(content, sheets)
         assumptions = []
         validation_warnings = []
+        prediction = None
         used_target_utilization = target_utilization
         model_version = "baseline-v1"
 
@@ -193,6 +207,8 @@ async def calculate_plan(
             "target_utilization": used_target_utilization,
             "model_version": model_version,
             "planning_grain": "store_day",
+            "prediction_source": prediction["prediction_source"],
+            "prediction_fallback_reason": prediction["fallback_reason"],
             "row_count": len(plan),
             "assumptions": assumptions,
             "validation_warnings": validation_warnings,

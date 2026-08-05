@@ -134,7 +134,31 @@ def build_daily_summaries(plan: list[dict]) -> list[dict]:
                 {
                     "planning_grain": "store_day",
                     "forecast_orders": round(
+                        sum(
+                            float(
+                                row.get(
+                                    "planning_demand_shipments",
+                                    row["forecast_shipments"],
+                                )
+                            )
+                            for row in rows
+                        ),
+                        2,
+                    ),
+                    "baseline_forecast_orders": round(
                         sum(float(row["forecast_shipments"]) for row in rows),
+                        2,
+                    ),
+                    "predicted_orders": round(
+                        sum(
+                            float(
+                                row.get(
+                                    "predicted_shipments",
+                                    row["forecast_shipments"],
+                                )
+                            )
+                            for row in rows
+                        ),
                         2,
                     ),
                     "required_courier_hours": round(required_hours, 2),

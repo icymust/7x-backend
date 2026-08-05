@@ -74,12 +74,16 @@ Excel.
 Official response дополнительно содержит:
 
 - `dataset_type: workforce_multi_sheet`;
-- `model_version: official-daily-forecast-baseline-v1`;
+- `model_version: catboost-daily-residual-v1` when the model is available;
 - `planning_grain: store_day`;
+- `prediction_source: catboost` or `excel_baseline` fallback;
+- `prediction_fallback_reason` — `null` on successful CatBoost inference;
 - normalization `assumptions` и `validation_warnings`;
 - `store_name`, `emirate` и `zone` в каждой plan row;
 - дневные `required_courier_hours`, `available_courier_hours` и
   `available_delivery_capacity`;
+- `baseline_forecast_shipments`, `predicted_shipments` и
+  `planning_demand_shipments` в каждой plan row;
 - Friday/Saturday weekend metadata из Dataset.
 
 Блокирующая проблема одного из трёх листов возвращает `422`. Warnings не
