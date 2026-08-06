@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Avatar from 'primevue/avatar'
+import DatasetUploadDialog from './DatasetUploadDialog.vue'
 import { useTheme } from '../composables/useTheme'
 
 const { isDark, toggleTheme } = useTheme()
@@ -10,6 +11,7 @@ const router = useRouter()
 
 const STORAGE_KEY = '7x-sidebar-collapsed'
 const collapsed = ref(localStorage.getItem(STORAGE_KEY) === '1')
+const uploadDialogVisible = ref(false)
 
 function toggleCollapsed() {
   collapsed.value = !collapsed.value
@@ -70,9 +72,20 @@ function selectItem(item: NavItem) {
         <i :class="item.icon" class="sidebar__item-icon" />
         <span v-if="!collapsed" class="sidebar__item-label">{{ item.label }}</span>
       </button>
+
     </nav>
 
     <div class="sidebar__footer">
+      <button
+        type="button"
+        class="sidebar__item sidebar__item--upload"
+        :title="collapsed ? 'Upload Excel' : undefined"
+        @click="uploadDialogVisible = true"
+      >
+        <i class="pi pi-upload sidebar__item-icon" />
+        <span v-if="!collapsed" class="sidebar__item-label">Upload Excel</span>
+      </button>
+
       <button
         type="button"
         class="sidebar__item"
@@ -97,6 +110,8 @@ function selectItem(item: NavItem) {
       </div>
     </div>
   </aside>
+
+  <DatasetUploadDialog v-model:visible="uploadDialogVisible" />
 </template>
 
 <style scoped>
@@ -183,6 +198,19 @@ function selectItem(item: NavItem) {
 
 .sidebar__item--active {
   background: rgba(74, 125, 255, 0.18);
+  color: #ffffff;
+}
+
+.sidebar__item--upload {
+  margin-bottom: 0.45rem;
+  border: 1px solid rgba(124, 168, 255, 0.72);
+  background: transparent;
+  color: #a8c7ff;
+}
+
+.sidebar__item--upload:hover {
+  border-color: #a8c7ff;
+  background: rgba(74, 125, 255, 0.14);
   color: #ffffff;
 }
 
