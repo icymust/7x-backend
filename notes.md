@@ -651,6 +651,8 @@ WAPE improvement: 0.0508 percentage points
   - warehouses с координатами и месячным operational status;
     - `critical`: coverage ниже 80% или critical-дни составляют минимум 50%;
     - иначе shortage имеет приоритет над surplus и balanced;
+  - demand analytics с actual orders за исторические месяцы и месячными
+    CatBoost totals для будущего 90-дневного горизонта;
   - operational KPI для dashboard;
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.

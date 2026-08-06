@@ -931,6 +931,53 @@ def test_stores_return_404_for_unknown_run():
     }
 
 
+def test_gets_saved_demand_analytics():
+    analytics = {
+        "model_version": "catboost-daily-future-v1",
+        "historical_total_orders": 1000,
+        "forecast_total_orders": 1200,
+        "historical_monthly": [],
+        "forecast_monthly": [],
+    }
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={"demand_analytics": analytics},
+    )
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get("/api/planning-runs/5/demand-analytics")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "planning_run_id": 5,
+        "dataset_id": 1,
+        **analytics,
+    }
+
+
+def test_demand_analytics_requires_recalculation_for_old_run():
+    planning_run = SimpleNamespace(
+        id=5,
+        dataset_id=1,
+        result={},
+    )
+    app.dependency_overrides[get_db] = lambda: FakeDatabase(planning_run)
+
+    try:
+        response = client.get("/api/planning-runs/5/demand-analytics")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Demand analytics is unavailable; recalculate the workbook",
+    }
+
+
 def test_gets_filtered_planning_run_kpis():
     planning_run = SimpleNamespace(
         id=5,

@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { label: 'Warehouses', icon: 'pi pi-box', to: '/map' },
   { label: 'Notifications', icon: 'pi pi-bell', to: '/notifications' },
   { label: 'Couriers', icon: 'pi pi-users' },
-  { label: 'Analytics', icon: 'pi pi-chart-line' },
+  { label: 'Analytics', icon: 'pi pi-chart-line', to: '/analytics' },
   { label: 'Settings', icon: 'pi pi-cog' },
 ]
 

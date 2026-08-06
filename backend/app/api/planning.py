@@ -10,6 +10,7 @@ from app.business_rules import OFFICIAL_TARGET_UTILIZATION
 from app.database import get_db
 from app.engines.capacity import calculate_capacity_plan
 from app.engines.daily_summary import build_daily_summaries
+from app.engines.demand_analytics import build_demand_analytics
 from app.engines.recommendations import build_recommendation
 from app.importers.column_mapper import (
     build_column_mapping,
@@ -129,8 +130,9 @@ def _load_workforce_dataframe(
         normalization.daily_capacity_rows["date"].max()
     ).date()
 
+    history = build_demand_training_data(workbook)
+
     if planning_date > historical_date_to:
-        history = build_demand_training_data(workbook)
         prediction = forecast_future_demand(
             history,
             horizon_start=planning_date,
@@ -147,6 +149,11 @@ def _load_workforce_dataframe(
             "historical_date_to": prediction.historical_date_to,
             "horizon_start": prediction.horizon_start,
             "horizon_end": prediction.horizon_end,
+            "demand_analytics": build_demand_analytics(
+                history,
+                prediction.dataframe,
+                model_version=prediction.model_version,
+            ),
         }
     else:
         prediction = apply_catboost_to_daily_capacity(
@@ -162,6 +169,11 @@ def _load_workforce_dataframe(
             "historical_date_to": historical_date_to.isoformat(),
             "horizon_start": None,
             "horizon_end": None,
+            "demand_analytics": build_demand_analytics(
+                history,
+                pd.DataFrame(),
+                model_version=prediction.model_version,
+            ),
         }
 
     return (
@@ -246,6 +258,7 @@ async def calculate_plan(
             "historical_date_to": prediction["historical_date_to"],
             "horizon_start": prediction["horizon_start"],
             "horizon_end": prediction["horizon_end"],
+            "demand_analytics": prediction["demand_analytics"],
             "row_count": len(plan),
             "assumptions": assumptions,
             "validation_warnings": validation_warnings,

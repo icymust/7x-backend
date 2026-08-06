@@ -309,6 +309,34 @@ def get_planning_run_kpis(
     }
 
 
+@router.get("/{planning_run_id}/demand-analytics")
+def get_planning_run_demand_analytics(
+    planning_run_id: int,
+    db: Session = Depends(get_db),
+):
+    planning_run = db.get(PlanningRun, planning_run_id)
+
+    if planning_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Planning run not found",
+        )
+
+    analytics = planning_run.result.get("demand_analytics")
+
+    if analytics is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Demand analytics is unavailable; recalculate the workbook",
+        )
+
+    return {
+        "planning_run_id": planning_run.id,
+        "dataset_id": planning_run.dataset_id,
+        **analytics,
+    }
+
+
 @router.get("/{planning_run_id}/decision-plan")
 def get_planning_run_decision_plan(
     planning_run_id: int,

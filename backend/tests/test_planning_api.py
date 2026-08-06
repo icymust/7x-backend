@@ -296,6 +296,21 @@ def test_calculates_90_day_future_plan_from_official_workbook(monkeypatch):
     assert result["plan"][0]["date"] == "2026-05-02"
     assert result["plan"][-1]["date"] == "2026-07-30"
     assert "actual_shipments" not in result["plan"][0]
+    assert result["demand_analytics"]["model_version"] == (
+        "catboost-daily-future-v1"
+    )
+    assert result["demand_analytics"]["historical_monthly"] == [
+        {
+            "month": "2026-05",
+            "source": "actual",
+            "orders": 25.0,
+            "average_orders_per_day": 25.0,
+            "covered_days": 1,
+            "date_from": "2026-05-01",
+            "date_to": "2026-05-01",
+        }
+    ]
+    assert len(result["demand_analytics"]["forecast_monthly"]) == 3
     assert len(saved["normalized_data"]) == 90
 
 

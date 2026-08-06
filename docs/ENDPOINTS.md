@@ -34,6 +34,7 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 | `GET` | `/api/planning-runs/{planning_run_id}` | Path: `planning_run_id` | Возвращает полный plan, calendar, metadata и IDs без повторной загрузки Excel. |
 | `GET` | `/api/planning-runs/{planning_run_id}/stores` | Path: `planning_run_id`; optional Query: `month` в формате `YYYY-MM` | Возвращает warehouses с `store_id`, названием, `lat`, `lng` и status за выбранный месяц. |
 | `GET` | `/api/planning-runs/{planning_run_id}/kpis` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает операционные KPI для dashboard: coverage, capacity totals, staffing buckets, critical days и emergency hiring actions. |
+| `GET` | `/api/planning-runs/{planning_run_id}/demand-analytics` | Path: `planning_run_id` | Возвращает месячные actual orders из Excel и 90-дневный ML forecast для Analytics page. |
 | `GET` | `/api/planning-runs/{planning_run_id}/decision-plan` | Path: `planning_run_id`; optional Query: `store_id` | Строит rolling workforce plan на 90 дней. С `store_id` возвращает actions, где выбранный склад получает решение или является источником transfer. |
 | `GET` | `/api/planning-runs/{planning_run_id}/calendar` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает дни с UAE calendar metadata, severity, coverage, required/available, shortage/surplus и recommendations count. |
 | `GET` | `/api/planning-runs/{planning_run_id}/recommendations` | Optional Query: `date_from`, `date_to`, `store_id` | Возвращает capacity context, permanent/outsourced counts, deadlines, priority и reason. |
@@ -161,6 +162,22 @@ surplus другого дня не скрывает дефицит. Без `mont
 Planning Run. Для месяца без planning data endpoint возвращает `422`.
 Новые Planning Runs сохраняют координаты непосредственно в `plan`; для старых
 расчётов endpoint берёт их из связанного `Dataset.normalized_data`.
+
+## Demand analytics
+
+```text
+GET /api/planning-runs/1/demand-analytics
+```
+
+Endpoint возвращает две компактные серии:
+
+- `historical_monthly` — фактические `actual_shipments` из Excel по месяцам;
+- `forecast_monthly` — `predicted_shipments` CatBoost на следующие 90 дней.
+
+Каждая строка содержит `orders`, `average_orders_per_day`, `covered_days` и
+точный диапазон дат. Это важно для первого и последнего неполных месяцев
+90-дневного прогноза. Старый Planning Run без сохранённой аналитики вернёт
+`422`; необходимо повторить `POST /api/planning/calculate`.
 
 ## Фильтры
 
