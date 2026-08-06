@@ -54,11 +54,24 @@ services:
     image: sevenx-frontend:latest
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     container_name: sevenx-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
+
+  nginx:
+    image: sevenx-nginx:latest
+    build:
+      context: ./nginx
+    container_name: sevenx-nginx
+    ports:
+      - "${PROXY_PORT:-8080}:80"
+    depends_on:
+      - backend
+      - frontend
 
 volumes:
   postgres_data:

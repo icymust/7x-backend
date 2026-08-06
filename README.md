@@ -49,16 +49,24 @@ docker compose up --build -d
 ```
 
 This builds and starts PostgreSQL, the FastAPI backend (runs Alembic
-migrations automatically, then Uvicorn), and an Nginx-served Vite build of
-the frontend.
+migrations automatically, then Uvicorn), an Nginx-served Vite build of the
+frontend, and an Nginx reverse proxy that fronts both of them on a single
+port.
 
-| Service       | URL                              |
-|---------------|-----------------------------------|
-| Frontend      | http://127.0.0.1:3000            |
-| Backend API   | http://127.0.0.1:8000            |
-| Swagger UI    | http://127.0.0.1:8000/docs       |
-| OpenAPI JSON  | http://127.0.0.1:8000/openapi.json |
-| PostgreSQL    | localhost:5433                   |
+| Service               | URL                                 |
+|------------------------|--------------------------------------|
+| App (via proxy)        | http://127.0.0.1:8080               |
+| Swagger UI (via proxy) | http://127.0.0.1:8080/docs          |
+| Frontend (direct)      | http://127.0.0.1:3000               |
+| Backend API (direct)   | http://127.0.0.1:8000               |
+| Swagger UI (direct)    | http://127.0.0.1:8000/docs          |
+| OpenAPI JSON (direct)  | http://127.0.0.1:8000/openapi.json  |
+| PostgreSQL              | localhost:5433                     |
+
+For port forwarding or demoing the app (e.g. over SSH tunnel or ngrok), use
+the proxy port (`8080` by default, `PROXY_PORT` in `.env`) — it's the only
+port that needs to be forwarded, since it serves the frontend and routes
+`/api`, `/health`, and `/docs` to the backend on the same origin.
 
 Check everything is healthy:
 
