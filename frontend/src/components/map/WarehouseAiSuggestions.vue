@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import Button from 'primevue/button'
+import Skeleton from 'primevue/skeleton'
 import { warehouses } from '../../data/warehouseData'
 import {
   fetchDecisionPlanActions,
@@ -52,6 +53,16 @@ const PRIORITY_COLOR: Record<DecisionPriority, string> = {
   medium: '#2563eb',
   low: '#16a34a',
 }
+
+// Placeholder line widths for the skeleton, one entry per eventual bullet
+// (Recommendation/Evidence/Timing/Reason - see SELECTED_ACTION_PROMPT in
+// llm_service.py) shaped to roughly match how those bullets actually wrap.
+const SKELETON_SECTIONS: string[][] = [
+  ['55%'],
+  ['100%', '80%'],
+  ['70%'],
+  ['100%', '60%'],
+]
 
 const ACTION_TYPE_META: Record<DecisionActionType, { icon: string; title: string }> = {
   emergency_outsourcing: { icon: 'pi pi-exclamation-triangle', title: 'Emergency outsourcing' },
@@ -199,29 +210,50 @@ watch(
         <span class="ai-suggestions__message-icon"><i :class="message.icon" /></span>
         <div class="ai-suggestions__message-body">
           <span class="ai-suggestions__message-title">{{ message.title }}</span>
-          <p v-if="message.explaining" class="ai-suggestions__message-text ai-suggestions__message-text--pending">
-            Generating explanation…
-          </p>
-          <ul v-else class="ai-suggestions__message-lines">
-            <li v-for="(line, index) in message.lines" :key="index" class="ai-suggestions__message-line">
-              <strong v-if="line.label">{{ line.label }}:</strong> {{ line.text }}
-            </li>
-          </ul>
-          <Button
-            v-if="message.resolveAction"
-            size="small"
-            outlined
-            :icon="message.resolveAction.action.icon"
-            :label="message.resolveAction.action.title"
-            class="ai-suggestions__message-action"
-            @click="
-              openAction(message.resolveAction.action, {
-                count: message.resolveAction.count,
-                startDate: message.resolveAction.startDate,
-                source: message.resolveAction.source,
-              })
-            "
-          />
+          <div v-if="message.explaining" class="ai-suggestions__skeleton">
+            <div
+              v-for="(widths, sectionIndex) in SKELETON_SECTIONS"
+              :key="sectionIndex"
+              class="ai-suggestions__skeleton-section"
+            >
+              <Skeleton
+                v-for="(width, lineIndex) in widths"
+                :key="lineIndex"
+                height="0.65rem"
+                :width="width"
+                class="ai-suggestions__skeleton-line"
+              />
+            </div>
+            <Skeleton width="7.5rem" height="1.9rem" border-radius="6px" class="ai-suggestions__skeleton-button" />
+          </div>
+          <template v-else>
+            <ul class="ai-suggestions__message-lines">
+              <li
+                v-for="(line, index) in message.lines"
+                :key="index"
+                class="ai-suggestions__message-line ai-suggestions__message-line--fade-in"
+                :style="{ animationDelay: `${index * 0.12}s` }"
+              >
+                <strong v-if="line.label">{{ line.label }}:</strong> {{ line.text }}
+              </li>
+            </ul>
+            <Button
+              v-if="message.resolveAction"
+              size="small"
+              outlined
+              :icon="message.resolveAction.action.icon"
+              :label="message.resolveAction.action.title"
+              class="ai-suggestions__message-action ai-suggestions__message-action--fade-in"
+              :style="{ animationDelay: `${message.lines.length * 0.12}s` }"
+              @click="
+                openAction(message.resolveAction.action, {
+                  count: message.resolveAction.count,
+                  startDate: message.resolveAction.startDate,
+                  source: message.resolveAction.source,
+                })
+              "
+            />
+          </template>
         </div>
       </div>
     </div>
@@ -293,17 +325,20 @@ watch(
   color: var(--p-text-color);
 }
 
-.ai-suggestions__message-text {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--p-text-muted-color);
+.ai-suggestions__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-.ai-suggestions__message-text--pending {
-  font-style: italic;
-  opacity: 0.65;
-  animation: ai-pending-pulse 1.4s ease-in-out infinite;
+.ai-suggestions__skeleton-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ai-suggestions__skeleton-button {
+  margin-top: 0.15rem;
 }
 
 .ai-suggestions__message-lines {
@@ -339,13 +374,24 @@ watch(
   font-weight: 700;
 }
 
-@keyframes ai-pending-pulse {
-  0%,
-  100% {
-    opacity: 0.4;
+/* Each bullet (and the button after them) fades/slides in on its own,
+   staggered via an inline animation-delay - see the template - so the
+   explanation reads as arriving block by block rather than popping in at
+   once. */
+.ai-suggestions__message-line--fade-in,
+.ai-suggestions__message-action--fade-in.p-button {
+  opacity: 0;
+  animation: ai-block-fade-in 0.35s ease forwards;
+}
+
+@keyframes ai-block-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
-  50% {
-    opacity: 0.8;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

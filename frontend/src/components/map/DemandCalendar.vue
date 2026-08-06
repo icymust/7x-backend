@@ -1,24 +1,56 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
-import type { DayDemand } from '../../data/demandCalendarData'
-import { CALENDAR_MONTH, CALENDAR_YEAR, DEMAND_LEVEL_LABEL, getDemandCalendarMonth } from '../../data/demandCalendarData'
+import { fetchStoreCalendar, type CalendarDay, type CalendarSeverity } from '../../services/calendarApi'
 
-const props = defineProps<{ warehouseName: string }>()
+const props = defineProps<{ storeId: string }>()
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const displayYear = ref(CALENDAR_YEAR)
-const displayMonth = ref(CALENDAR_MONTH)
+// Defaults to the current month rather than a fixed CALENDAR_YEAR/MONTH -
+// the backend's calendar only has data from the Planning Run's
+// planning_date forward (a future-forecast run has none before today), so
+// starting anywhere else would just land on an empty month.
+const today = new Date()
+const displayYear = ref(today.getFullYear())
+const displayMonth = ref(today.getMonth())
 
-// Jumping to a different branch should land back on the default month
-// rather than keep whatever month the previous branch was showing.
+const loading = ref(false)
+const error = ref<string | null>(null)
+const days = ref<CalendarDay[]>([])
+
+// Deliberately not toISOString(), which converts through UTC and can shift
+// the date by a day in any timezone ahead of UTC.
+function isoDate(year: number, month: number, day: number): string {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+async function loadMonth() {
+  loading.value = true
+  error.value = null
+  try {
+    const daysInMonth = new Date(displayYear.value, displayMonth.value + 1, 0).getDate()
+    days.value = await fetchStoreCalendar(
+      props.storeId,
+      isoDate(displayYear.value, displayMonth.value, 1),
+      isoDate(displayYear.value, displayMonth.value, daysInMonth),
+    )
+  } catch {
+    error.value = 'Could not load calendar stats. Try again later.'
+    days.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+// Jumping to a different branch, or navigating months, both need a refetch
+// - the backend has no client-side cache to fall back on.
 watch(
-  () => props.warehouseName,
+  [() => props.storeId, displayYear, displayMonth],
   () => {
-    displayYear.value = CALENDAR_YEAR
-    displayMonth.value = CALENDAR_MONTH
+    loadMonth()
   },
+  { immediate: true },
 )
 
 function goToPrevMonth() {
@@ -39,7 +71,7 @@ function goToNextMonth() {
   }
 }
 
-const days = computed(() => getDemandCalendarMonth(props.warehouseName, displayYear.value, displayMonth.value))
+const dayByDate = computed(() => new Map(days.value.map((d) => [d.date, d])))
 
 const monthLabel = computed(() =>
   new Date(displayYear.value, displayMonth.value, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
@@ -48,18 +80,72 @@ const monthAbbrev = computed(() =>
   new Date(displayYear.value, displayMonth.value, 1).toLocaleDateString('en-US', { month: 'short' }),
 )
 
-// Pad the front of the grid with blanks so day 1 lands in its real weekday column.
-const cells = computed<(DayDemand | null)[]>(() => {
+interface Cell {
+  day: number
+  data: CalendarDay | null
+}
+
+// Pad the front of the grid with blanks so day 1 lands in its real weekday
+// column. Days the backend has no plan for (outside the Planning Run's
+// horizon) still get a cell - just an empty one - so the grid shape never
+// jumps around as you page through months.
+const cells = computed<(Cell | null)[]>(() => {
   const firstWeekday = new Date(displayYear.value, displayMonth.value, 1).getDay()
-  return [...Array(firstWeekday).fill(null), ...days.value]
+  const daysInMonth = new Date(displayYear.value, displayMonth.value + 1, 0).getDate()
+  const monthCells: Cell[] = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1
+    return { day, data: dayByDate.value.get(isoDate(displayYear.value, displayMonth.value, day)) ?? null }
+  })
+  return [...Array(firstWeekday).fill(null), ...monthCells]
 })
 
-const legendItems: { level: DayDemand['level']; label: string }[] = [
-  { level: 'low', label: DEMAND_LEVEL_LABEL.low },
-  { level: 'normal', label: DEMAND_LEVEL_LABEL.normal },
-  { level: 'high', label: DEMAND_LEVEL_LABEL.high },
-  { level: 'critical', label: DEMAND_LEVEL_LABEL.critical },
+const SEVERITY_LABEL: Record<CalendarSeverity, string> = {
+  critical: 'Critical shortage',
+  high: 'High shortage',
+  warning: 'Shortage',
+  surplus: 'Surplus',
+  normal: 'Balanced',
+}
+
+const legendItems: { severity: CalendarSeverity; label: string }[] = [
+  { severity: 'surplus', label: SEVERITY_LABEL.surplus },
+  { severity: 'normal', label: SEVERITY_LABEL.normal },
+  { severity: 'warning', label: SEVERITY_LABEL.warning },
+  { severity: 'high', label: SEVERITY_LABEL.high },
+  { severity: 'critical', label: SEVERITY_LABEL.critical },
 ]
+
+function cellTitle(day: number, data: CalendarDay): string {
+  const orders = data.predicted_orders != null ? `${Math.round(data.predicted_orders)} orders` : null
+  return [
+    `${monthAbbrev.value} ${day}`,
+    orders,
+    `${data.coverage_percent}% coverage`,
+    `shortage ${data.shortage_courier_slots}`,
+    SEVERITY_LABEL[data.severity],
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+// Monthly stats for this store, built straight from the same rows behind
+// the grid - critical-day count, average coverage and total shortage give
+// a quick read on the month without having to scan every cell.
+const stats = computed(() => {
+  if (days.value.length === 0) return null
+
+  const criticalDays = days.value.filter((d) => d.severity === 'critical').length
+  const avgCoverage = days.value.reduce((sum, d) => sum + d.coverage_percent, 0) / days.value.length
+  const totalShortage = days.value.reduce((sum, d) => sum + d.shortage_courier_slots, 0)
+  const totalOrders = days.value.reduce((sum, d) => sum + (d.predicted_orders ?? 0), 0)
+
+  return {
+    criticalDays,
+    avgCoverage: Math.round(avgCoverage * 10) / 10,
+    totalShortage,
+    totalOrders: Math.round(totalOrders),
+  }
+})
 </script>
 
 <template>
@@ -70,29 +156,55 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
       <Button icon="pi pi-chevron-right" text rounded size="small" aria-label="Next month" @click="goToNextMonth" />
     </div>
 
-    <div class="demand-calendar__grid">
-      <span v-for="wd in WEEKDAYS" :key="wd" class="demand-calendar__weekday">{{ wd }}</span>
-
-      <div
-        v-for="(cell, i) in cells"
-        :key="i"
-        class="demand-calendar__cell"
-        :class="cell ? `demand-calendar__cell--${cell.level}` : 'demand-calendar__cell--empty'"
-        :title="cell ? `${monthAbbrev} ${cell.day}: ${cell.value} orders (${DEMAND_LEVEL_LABEL[cell.level]})` : undefined"
-      >
-        <template v-if="cell">
-          <span class="demand-calendar__day">{{ cell.day }}</span>
-          <span class="demand-calendar__count">{{ cell.value }}</span>
-        </template>
+    <div v-if="loading" class="demand-calendar__status">Loading…</div>
+    <p v-else-if="error" class="demand-calendar__status demand-calendar__status--error">{{ error }}</p>
+    <template v-else>
+      <div v-if="stats" class="demand-calendar__stats">
+        <div class="demand-calendar__stat">
+          <span class="demand-calendar__stat-value">{{ stats.avgCoverage }}%</span>
+          <span class="demand-calendar__stat-label">Avg. Coverage</span>
+        </div>
+        <div class="demand-calendar__stat">
+          <span class="demand-calendar__stat-value">{{ stats.criticalDays }}</span>
+          <span class="demand-calendar__stat-label">Critical Days</span>
+        </div>
+        <div class="demand-calendar__stat">
+          <span class="demand-calendar__stat-value">{{ stats.totalShortage }}</span>
+          <span class="demand-calendar__stat-label">Shortage (couriers)</span>
+        </div>
+        <div class="demand-calendar__stat">
+          <span class="demand-calendar__stat-value">{{ stats.totalOrders.toLocaleString('en-US') }}</span>
+          <span class="demand-calendar__stat-label">Predicted Orders</span>
+        </div>
       </div>
-    </div>
+      <p v-else class="demand-calendar__status">No plan data for this month.</p>
 
-    <div class="demand-calendar__legend">
-      <span v-for="item in legendItems" :key="item.level" class="demand-calendar__legend-item">
-        <span class="demand-calendar__swatch" :class="`demand-calendar__cell--${item.level}`" />
-        {{ item.label }}
-      </span>
-    </div>
+      <div class="demand-calendar__grid">
+        <span v-for="wd in WEEKDAYS" :key="wd" class="demand-calendar__weekday">{{ wd }}</span>
+
+        <div
+          v-for="(cell, i) in cells"
+          :key="i"
+          class="demand-calendar__cell"
+          :class="cell ? `demand-calendar__cell--${cell.data?.severity ?? 'empty-data'}` : 'demand-calendar__cell--empty'"
+          :title="cell?.data ? cellTitle(cell.day, cell.data) : undefined"
+        >
+          <template v-if="cell">
+            <span class="demand-calendar__day">{{ cell.day }}</span>
+            <span v-if="cell.data?.predicted_orders != null" class="demand-calendar__count">
+              {{ Math.round(cell.data.predicted_orders) }}
+            </span>
+          </template>
+        </div>
+      </div>
+
+      <div class="demand-calendar__legend">
+        <span v-for="item in legendItems" :key="item.severity" class="demand-calendar__legend-item">
+          <span class="demand-calendar__swatch" :class="`demand-calendar__cell--${item.severity}`" />
+          {{ item.label }}
+        </span>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -121,6 +233,46 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--p-text-color);
+}
+
+.demand-calendar__status {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--p-text-muted-color);
+  text-align: center;
+}
+
+.demand-calendar__status--error {
+  color: #dc2626;
+}
+
+.demand-calendar__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 0.65rem;
+  background: var(--p-content-background);
+}
+
+.demand-calendar__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.demand-calendar__stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--p-text-color);
+  letter-spacing: -0.01em;
+}
+
+.demand-calendar__stat-label {
+  font-size: 0.68rem;
+  color: var(--p-text-muted-color);
 }
 
 .demand-calendar__grid {
@@ -153,7 +305,8 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
     box-shadow 0.18s ease;
 }
 
-.demand-calendar__cell--empty {
+.demand-calendar__cell--empty,
+.demand-calendar__cell--empty-data {
   border-color: transparent;
 }
 
@@ -212,9 +365,14 @@ const legendItems: { level: DayDemand['level']; label: string }[] = [
   background: var(--p-content-background);
 }
 
-.demand-calendar__cell--low {
+.demand-calendar__cell--surplus {
   background: rgba(22, 163, 74, 0.18);
   border-color: rgba(22, 163, 74, 0.35);
+}
+
+.demand-calendar__cell--warning {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: rgba(234, 179, 8, 0.4);
 }
 
 .demand-calendar__cell--high {

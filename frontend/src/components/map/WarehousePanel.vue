@@ -289,7 +289,7 @@ const chartOptions = computed(() => {
                     </div>
                   </TabPanel>
                   <TabPanel value="daily">
-                    <DemandCalendar :warehouse-name="active.name" />
+                    <DemandCalendar :store-id="active.storeId" />
                   </TabPanel>
                   <TabPanel value="hourly">
                     <DemandHourlyChart :warehouse-name="active.name" />
