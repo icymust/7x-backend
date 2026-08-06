@@ -98,7 +98,7 @@ def _store_productivity_per_hour(dataframe: pd.DataFrame) -> pd.Series:
             productivity > 0,
             DELIVERIES_PER_COURIER_HOUR,
         )
-        + 9.0
+        + 15.0
     )
 
 
