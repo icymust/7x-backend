@@ -147,10 +147,14 @@ GET /api/planning-runs/1/stores?month=2026-08
 
 Статус рассчитывается по всем дням выбранного месяца:
 
-- `critical` — есть хотя бы один critical shortage day;
-- `shortage` — есть shortage, но нет critical дня;
+- `critical` — месячный coverage ниже `80%` или critical-дни составляют не
+  менее `50%` дней месяца;
+- `shortage` — месяц не critical, но хотя бы в один день есть дефицит;
 - `surplus` — shortage отсутствует, но есть surplus;
 - `balanced` — нет shortage и surplus.
+
+Месячный coverage считается по фактически закрытой capacity. Для official
+daily plan используются courier-hours, для legacy plan — courier slots.
 
 Приоритет статусов: `critical` → `shortage` → `surplus` → `balanced`. Поэтому
 surplus другого дня не скрывает дефицит. Без `month` статус считается по всему

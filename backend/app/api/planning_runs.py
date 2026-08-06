@@ -17,20 +17,58 @@ router = APIRouter(
     tags=["planning-runs"],
 )
 
+MONTHLY_CRITICAL_COVERAGE_PERCENT = 80.0
+MONTHLY_CRITICAL_DAY_RATIO = 0.50
+
 
 def _store_month_status(plan: list[dict]) -> str:
-    severities = {
-        day["severity"]
-        for day in build_daily_summaries(plan)
-    }
+    daily_summaries = build_daily_summaries(plan)
 
-    if "critical" in severities:
+    if not daily_summaries:
+        return "balanced"
+
+    is_daily_plan = all(
+        row.get("planning_grain") == "store_day" for row in plan
+    )
+
+    if is_daily_plan:
+        required_capacity = sum(
+            float(row.get("required_courier_hours", 0)) for row in plan
+        )
+        covered_capacity = sum(
+            min(
+                float(row.get("required_courier_hours", 0)),
+                float(row.get("available_courier_hours", 0)),
+            )
+            for row in plan
+        )
+    else:
+        required_capacity = sum(row["required_couriers"] for row in plan)
+        covered_capacity = sum(
+            min(row["required_couriers"], row["available_couriers"])
+            for row in plan
+        )
+
+    coverage_percent = (
+        covered_capacity / required_capacity * 100
+        if required_capacity
+        else 100.0
+    )
+    critical_days = sum(
+        day["severity"] == "critical" for day in daily_summaries
+    )
+    critical_day_ratio = critical_days / len(daily_summaries)
+
+    if (
+        coverage_percent < MONTHLY_CRITICAL_COVERAGE_PERCENT
+        or critical_day_ratio >= MONTHLY_CRITICAL_DAY_RATIO
+    ):
         return "critical"
 
-    if severities & {"high", "warning"}:
+    if any(row["shortage"] > 0 for row in plan):
         return "shortage"
 
-    if "surplus" in severities:
+    if any(row["surplus"] > 0 for row in plan):
         return "surplus"
 
     return "balanced"

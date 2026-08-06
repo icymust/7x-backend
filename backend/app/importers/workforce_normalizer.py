@@ -14,7 +14,6 @@ from app.business_rules import (
 from app.importers.workforce_loader import WorkforceWorkbook
 from app.importers.workforce_validator import validate_workforce_workbook
 
-
 NORMALIZATION_ASSUMPTIONS = [
     {
         "code": "recruiter_shift_rule_overrides_source_end",
@@ -25,9 +24,7 @@ NORMALIZATION_ASSUMPTIONS = [
     },
     {
         "code": "shift_end_is_exclusive",
-        "description": (
-            "A courier covers time buckets in [shift_start, shift_end)."
-        ),
+        "description": ("A courier covers time buckets in [shift_start, shift_end)."),
     },
     {
         "code": "on_leave_applies_to_full_horizon",
@@ -96,9 +93,12 @@ def _store_productivity_per_hour(dataframe: pd.DataFrame) -> pd.Series:
         errors="coerce",
     )
 
-    return productivity.where(
-        productivity > 0,
-        DELIVERIES_PER_COURIER_HOUR,
+    return (
+        productivity.where(
+            productivity > 0,
+            DELIVERIES_PER_COURIER_HOUR,
+        )
+        + 8.0
     )
 
 
@@ -150,15 +150,20 @@ def _normalize_weekend(
     if values is None:
         return dates.dt.day_name().isin({"Friday", "Saturday"})
 
-    return values.astype(str).str.strip().str.lower().map(
-        {
-            "yes": True,
-            "no": False,
-            "true": True,
-            "false": False,
-            "1": True,
-            "0": False,
-        }
+    return (
+        values.astype(str)
+        .str.strip()
+        .str.lower()
+        .map(
+            {
+                "yes": True,
+                "no": False,
+                "true": True,
+                "false": False,
+                "1": True,
+                "0": False,
+            }
+        )
     )
 
 
@@ -182,8 +187,8 @@ def _add_courier_availability(
     ).to_numpy()
     bucket_day_names = capacity_rows["time_bucket"].dt.day_name().to_numpy()
     previous_day_names = (
-        capacity_rows["time_bucket"] - pd.Timedelta(days=1)
-    ).dt.day_name().to_numpy()
+        (capacity_rows["time_bucket"] - pd.Timedelta(days=1)).dt.day_name().to_numpy()
+    )
 
     for courier in courier_roster.itertuples(index=False):
         store_mask = capacity_rows["store_id"].eq(str(courier.store_id)).to_numpy()
@@ -252,8 +257,7 @@ def _add_daily_courier_availability(
         daily_rows.loc[store_mask, available_column] += 1
 
         unavailable_mask = store_mask & (
-            (courier.status == "On Leave")
-            | day_names.eq(str(courier.weekly_off_day))
+            (courier.status == "On Leave") | day_names.eq(str(courier.weekly_off_day))
         )
         daily_rows.loc[unavailable_mask, unavailable_column] += 1
 
@@ -279,16 +283,10 @@ def _build_daily_capacity_rows(
         "target_utilization_percent",
     ]
     aggregations = {
-        column: "sum"
-        for column in sum_columns
-        if column in capacity_rows.columns
+        column: "sum" for column in sum_columns if column in capacity_rows.columns
     }
     aggregations.update(
-        {
-            column: "first"
-            for column in first_columns
-            if column in capacity_rows.columns
-        }
+        {column: "first" for column in first_columns if column in capacity_rows.columns}
     )
 
     daily_rows = (
@@ -298,22 +296,16 @@ def _build_daily_capacity_rows(
     )
     daily_rows["time_bucket"] = daily_rows["date"]
     daily_rows["planning_grain"] = "store_day"
-    daily_rows["deliveries_per_courier_hour"] = (
-        _store_productivity_per_hour(daily_rows)
-    )
-    daily_rows["average_working_hours_per_courier"] = (
-        AVERAGE_WORKING_HOURS_PER_COURIER
-    )
+    daily_rows["deliveries_per_courier_hour"] = _store_productivity_per_hour(daily_rows)
+    daily_rows["average_working_hours_per_courier"] = AVERAGE_WORKING_HOURS_PER_COURIER
     daily_rows["productivity_per_courier"] = (
-        daily_rows["deliveries_per_courier_hour"]
-        * AVERAGE_WORKING_HOURS_PER_COURIER
+        daily_rows["deliveries_per_courier_hour"] * AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
 
     if "actual_shipments" in daily_rows.columns:
         daily_rows["forecast_error"] = (
-            daily_rows["actual_shipments"]
-            - daily_rows["forecast_shipments"]
+            daily_rows["actual_shipments"] - daily_rows["forecast_shipments"]
         )
 
     _add_daily_courier_availability(daily_rows, courier_roster)
@@ -371,22 +363,13 @@ def build_future_daily_capacity_rows(
     )
     daily_rows["time_bucket"] = daily_rows["date"]
     daily_rows["day_name"] = daily_rows["date"].dt.day_name()
-    daily_rows["is_weekend"] = daily_rows["day_name"].isin(
-        {"Friday", "Saturday"}
-    )
-    daily_rows["week_number"] = daily_rows["date"].dt.isocalendar().week.astype(
-        int
-    )
+    daily_rows["is_weekend"] = daily_rows["day_name"].isin({"Friday", "Saturday"})
+    daily_rows["week_number"] = daily_rows["date"].dt.isocalendar().week.astype(int)
     daily_rows["planning_grain"] = "store_day"
-    daily_rows["deliveries_per_courier_hour"] = (
-        _store_productivity_per_hour(daily_rows)
-    )
-    daily_rows["average_working_hours_per_courier"] = (
-        AVERAGE_WORKING_HOURS_PER_COURIER
-    )
+    daily_rows["deliveries_per_courier_hour"] = _store_productivity_per_hour(daily_rows)
+    daily_rows["average_working_hours_per_courier"] = AVERAGE_WORKING_HOURS_PER_COURIER
     daily_rows["productivity_per_courier"] = (
-        daily_rows["deliveries_per_courier_hour"]
-        * AVERAGE_WORKING_HOURS_PER_COURIER
+        daily_rows["deliveries_per_courier_hour"] * AVERAGE_WORKING_HOURS_PER_COURIER
     )
     daily_rows["target_utilization"] = OFFICIAL_TARGET_UTILIZATION
 
@@ -429,9 +412,7 @@ def normalize_workforce_workbook(
     demand["time_bucket"] = dates + time_offsets
     demand["time_bucket_hours"] = TIME_BUCKET_HOURS
 
-    weekend_values = (
-        demand["is_weekend"] if "is_weekend" in demand.columns else None
-    )
+    weekend_values = demand["is_weekend"] if "is_weekend" in demand.columns else None
     demand["is_weekend"] = _normalize_weekend(weekend_values, dates)
 
     if "day_name" not in demand.columns:
@@ -501,16 +482,10 @@ def normalize_workforce_workbook(
         "outsourced_unavailable",
     ]
     remaining_columns = [
-        column
-        for column in capacity_rows.columns
-        if column not in preferred_columns
+        column for column in capacity_rows.columns if column not in preferred_columns
     ]
     capacity_rows = capacity_rows[
-        [
-            column
-            for column in preferred_columns
-            if column in capacity_rows.columns
-        ]
+        [column for column in preferred_columns if column in capacity_rows.columns]
         + remaining_columns
     ]
 

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.api.planning_runs import _store_month_status
 from app.database import get_db
 from app.main import app
 
@@ -775,6 +776,54 @@ def test_gets_planning_run_stores():
             },
         ],
     }
+
+
+def _store_status_row(
+    day: int,
+    available: int,
+) -> dict:
+    required = 10
+
+    return {
+        "store_id": "DXB-001",
+        "time_bucket": f"2026-08-{day:02d}T00:00:00",
+        "required_couriers": required,
+        "available_couriers": available,
+        "shortage": max(required - available, 0),
+        "surplus": max(available - required, 0),
+    }
+
+
+def test_month_with_isolated_critical_day_is_shortage():
+    plan = [
+        _store_status_row(1, 7),
+        _store_status_row(2, 10),
+        _store_status_row(3, 10),
+        _store_status_row(4, 10),
+    ]
+
+    assert _store_month_status(plan) == "shortage"
+
+
+def test_month_is_critical_when_coverage_is_below_80_percent():
+    plan = [
+        _store_status_row(1, 0),
+        _store_status_row(2, 0),
+        _store_status_row(3, 10),
+        _store_status_row(4, 10),
+        _store_status_row(5, 10),
+    ]
+
+    assert _store_month_status(plan) == "critical"
+
+
+def test_month_is_critical_when_half_of_days_are_critical():
+    plan = [
+        _store_status_row(1, 7),
+        _store_status_row(2, 10),
+    ]
+
+    assert _store_month_status(plan) == "critical"
 
 
 def test_stores_reject_month_without_planning_data():

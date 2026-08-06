@@ -67,21 +67,15 @@ def calculate_daily_capacity(
         raise ValueError("Deliveries per courier hour must be greater than zero")
 
     effective_available_permanent = available_permanent - permanent_unavailable
-    effective_available_outsourced = (
-        available_outsourced - outsourced_unavailable
-    )
+    effective_available_outsourced = available_outsourced - outsourced_unavailable
 
     if effective_available_permanent < 0 or effective_available_outsourced < 0:
         raise ValueError("Unavailable couriers cannot exceed available couriers")
 
-    required_courier_hours = (
-        float(forecast_shipments) / deliveries_per_courier_hour
-    )
+    required_courier_hours = float(forecast_shipments) / deliveries_per_courier_hour
     available_courier_hours = (
-        effective_available_permanent
-        * WORKING_HOURS_BY_EMPLOYMENT_TYPE["FTE"]
-        + effective_available_outsourced
-        * WORKING_HOURS_BY_EMPLOYMENT_TYPE["FTC"]
+        effective_available_permanent * WORKING_HOURS_BY_EMPLOYMENT_TYPE["FTE"]
+        + effective_available_outsourced * WORKING_HOURS_BY_EMPLOYMENT_TYPE["FTC"]
     )
     shortage_courier_hours = max(
         required_courier_hours - available_courier_hours,
@@ -91,20 +85,15 @@ def calculate_daily_capacity(
         available_courier_hours - required_courier_hours,
         0.0,
     )
-    shortage = ceil(
-        shortage_courier_hours / AVERAGE_WORKING_HOURS_PER_COURIER
-    )
-    surplus = floor(
-        surplus_courier_hours / AVERAGE_WORKING_HOURS_PER_COURIER
-    )
+    shortage = ceil(shortage_courier_hours / AVERAGE_WORKING_HOURS_PER_COURIER)
+    surplus = floor(surplus_courier_hours / AVERAGE_WORKING_HOURS_PER_COURIER)
 
     return {
         "required_couriers": ceil(
             required_courier_hours / AVERAGE_WORKING_HOURS_PER_COURIER
         ),
         "available_couriers": (
-            effective_available_permanent
-            + effective_available_outsourced
+            effective_available_permanent + effective_available_outsourced
         ),
         "capacity_gap": surplus - shortage,
         "shortage": shortage,

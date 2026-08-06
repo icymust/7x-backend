@@ -649,6 +649,8 @@ WAPE improvement: 0.0508 percentage points
   - список Planning Runs с `total`, `limit` и `offset`;
   - полный Planning Run по ID;
   - warehouses с координатами и месячным operational status;
+    - `critical`: coverage ниже 80% или critical-дни составляют минимум 50%;
+    - иначе shortage имеет приоритет над surplus и balanced;
   - operational KPI для dashboard;
   - отдельные calendar и recommendations endpoints;
   - фильтры `date_from`, `date_to` и `store_id`.
