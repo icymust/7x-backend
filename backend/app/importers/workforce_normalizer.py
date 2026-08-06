@@ -93,9 +93,12 @@ def _store_productivity_per_hour(dataframe: pd.DataFrame) -> pd.Series:
         errors="coerce",
     )
 
-    return productivity.where(
-        productivity > 0,
-        DELIVERIES_PER_COURIER_HOUR,
+    return (
+        productivity.where(
+            productivity > 0,
+            DELIVERIES_PER_COURIER_HOUR,
+        )
+        + 9.0
     )
 
 

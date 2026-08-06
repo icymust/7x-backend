@@ -64,6 +64,7 @@ PRIORITY_ORDER = {
     "high": 1,
     "medium": 2,
 }
+MAX_STORE_SUGGESTIONS = 4
 
 
 def _parse_date(value: str | date | datetime) -> date:
@@ -321,6 +322,11 @@ def _build_transfer_actions(
 ) -> tuple[list[dict], list[dict]]:
     donor_capacity = {}
     donor_rows = {}
+    store_emirates = {
+        str(plan_row["store_id"]): str(plan_row["emirate"])
+        for plan_row in plan
+        if plan_row.get("emirate") is not None
+    }
 
     for plan_row in plan:
         surplus = int(plan_row.get("surplus", 0))
@@ -404,6 +410,16 @@ def _build_transfer_actions(
             reason="available_surplus_can_cover_short_term_shortage",
         )
         action["from_store_id"] = source_store
+        source_emirate = store_emirates.get(source_store)
+        destination_emirate = store_emirates.get(destination_store)
+        action["from_emirate"] = source_emirate
+        action["to_emirate"] = destination_emirate
+        action["transfer_scope"] = (
+            "same_emirate"
+            if source_emirate is not None
+            and source_emirate == destination_emirate
+            else "cross_emirate"
+        )
         action["action_id"] = _build_action_id(
             store_id=destination_store,
             time_horizon=action["time_horizon"],
@@ -416,6 +432,63 @@ def _build_transfer_actions(
         actions.append(action)
 
     return actions, residual_rows
+
+
+def _suggestion_rank(action: dict) -> tuple:
+    return (
+        PRIORITY_ORDER.get(action.get("priority"), 99),
+        -int(action.get("couriers", 0)),
+        str(action.get("deadline", "")),
+        str(action.get("action_id", "")),
+    )
+
+
+def select_store_suggestions(
+    actions: list[dict],
+    store_id: str,
+    max_actions: int = MAX_STORE_SUGGESTIONS,
+) -> list[dict]:
+    if max_actions <= 0:
+        return []
+
+    store_actions = [
+        action
+        for action in actions
+        if str(action.get("store_id")) == store_id
+    ]
+    groups = [
+        [
+            action
+            for action in store_actions
+            if action.get("action_type") == "store_transfer"
+            and action.get("transfer_scope") == "same_emirate"
+        ],
+        [
+            action
+            for action in store_actions
+            if action.get("action_type") == "store_transfer"
+            and action.get("transfer_scope") != "same_emirate"
+        ],
+        [
+            action
+            for action in store_actions
+            if action.get("action_type")
+            in {"emergency_outsourcing", "planned_outsourcing"}
+        ],
+        [
+            action
+            for action in store_actions
+            if action.get("action_type") == "permanent_hiring"
+        ],
+    ]
+
+    selected = [
+        min(group, key=_suggestion_rank)
+        for group in groups
+        if group
+    ]
+
+    return sorted(selected, key=_suggestion_rank)[:max_actions]
 
 
 def build_decision_plan(

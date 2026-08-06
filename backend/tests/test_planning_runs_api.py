@@ -1171,7 +1171,7 @@ def test_filters_decision_plan_by_store():
     }
 
 
-def test_store_filter_keeps_cross_store_transfer_context():
+def test_store_filter_only_returns_actions_for_destination_store():
     planning_run = SimpleNamespace(
         id=5,
         dataset_id=1,
@@ -1219,14 +1219,14 @@ def test_store_filter_keeps_cross_store_transfer_context():
     assert destination_result["actions_count"] == 2
     assert transfer["store_id"] == "DXB-001"
     assert transfer["from_store_id"] == "AUH-001"
+    assert transfer["transfer_scope"] == "cross_emirate"
     assert transfer["couriers"] == 3
 
     assert donor_response.status_code == 200
     donor_result = donor_response.json()
 
-    assert donor_result["actions_count"] == 1
-    assert donor_result["actions"][0]["action_type"] == "store_transfer"
-    assert donor_result["actions"][0]["from_store_id"] == "AUH-001"
+    assert donor_result["actions_count"] == 0
+    assert donor_result["actions"] == []
 
 
 def test_decision_plan_returns_404_for_unknown_run():
