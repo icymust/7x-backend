@@ -30,7 +30,7 @@ const navItems: NavItem[] = [
   { label: 'Notifications', icon: 'pi pi-bell', to: '/notifications' },
   { label: 'Couriers', icon: 'pi pi-users' },
   { label: 'Analytics', icon: 'pi pi-chart-line', to: '/analytics' },
-  { label: 'Settings', icon: 'pi pi-cog' },
+  { label: 'Settings', icon: 'pi pi-cog', to: '/settings' },
 ]
 
 const activeLabel = ref('Dashboard')
