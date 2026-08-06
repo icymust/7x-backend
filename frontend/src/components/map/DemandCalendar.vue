@@ -179,7 +179,7 @@ const stats = computed(() => {
       </div>
       <p v-else class="demand-calendar__status">No plan data for this month.</p>
 
-      <div class="demand-calendar__grid">
+      <div class="demand-calendar__grid" :key="`${displayYear}-${displayMonth}-${props.storeId}`">
         <span v-for="wd in WEEKDAYS" :key="wd" class="demand-calendar__weekday">{{ wd }}</span>
 
         <div
@@ -187,6 +187,7 @@ const stats = computed(() => {
           :key="i"
           class="demand-calendar__cell"
           :class="cell ? `demand-calendar__cell--${cell.data?.severity ?? 'empty-data'}` : 'demand-calendar__cell--empty'"
+          :style="{ '--cell-index': i }"
           :title="cell?.data ? cellTitle(cell.day, cell.data) : undefined"
         >
           <template v-if="cell">
@@ -303,6 +304,23 @@ const stats = computed(() => {
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease;
+  /* Staggered by --cell-index (set inline per cell) so the grid cascades in
+     left-to-right, top-to-bottom instead of popping in all at once. Grid
+     itself is keyed by year/month/store (and already unmounts/remounts via
+     the loading v-if), so this replays on every navigation. */
+  animation: demand-calendar-cell-in 0.36s ease backwards;
+  animation-delay: calc(var(--cell-index, 0) * 10ms);
+}
+
+@keyframes demand-calendar-cell-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .demand-calendar__cell--empty,

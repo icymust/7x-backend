@@ -54,10 +54,9 @@ export interface WarehouseProperties {
   nextMonthDemand: number
 }
 
-// Backend has no capacity/utilization/staff/courier-KPI concept at all yet -
-// these two are seeded per store_id so they're stable across reloads and
-// don't all look identical, but they are NOT real data. Everything else the
-// backend genuinely lacks (see loadWarehouses()) is zeroed instead of faked.
+// Backend has no capacity/utilization/staff/shipments/demand concept at all
+// yet, so every one of these is seeded per store_id instead of left at 0 -
+// stable across reloads and distinct per store, but NOT real data.
 function mockCapacitySqm(storeId: string): number {
   const rand = mulberry32(hashString(`${storeId}|capacity`))
   return Math.round((6000 + rand() * 26000) / 10) * 10
@@ -66,6 +65,35 @@ function mockCapacitySqm(storeId: string): number {
 function mockAvgCourierKpi(storeId: string): number {
   const rand = mulberry32(hashString(`${storeId}|kpi`))
   return Math.round(78 + rand() * 17)
+}
+
+function mockUtilizationPercent(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|utilization`))
+  return Math.round(45 + rand() * 50)
+}
+
+function mockActiveShipments(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|shipments`))
+  return Math.round(10 + rand() * 60)
+}
+
+function mockStaff(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|staff`))
+  return Math.round(25 + rand() * 135)
+}
+
+function mockCurrentMonthDemand(storeId: string): number {
+  const rand = mulberry32(hashString(`${storeId}|demand`))
+  return Math.round((80 + rand() * 520) / 5) * 5
+}
+
+// Derived from currentMonthDemand with its own seeded swing (+/-15%)
+// instead of being fully independent, so the two numbers read as one
+// plausible trend rather than unrelated guesses.
+function mockNextMonthDemand(storeId: string, currentMonthDemand: number): number {
+  const rand = mulberry32(hashString(`${storeId}|demand-next`))
+  const growth = 0.85 + rand() * 0.3
+  return Math.round((currentMonthDemand * growth) / 5) * 5
 }
 
 // Sums required vs. available across every row for the store, rather than
@@ -105,6 +133,7 @@ function toWarehouseFeature(
   // falls back to [0, 0] for those, same as before.
   const coordinates: [number, number] =
     store.lat != null && store.lng != null ? [store.lng, store.lat] : [0, 0]
+  const currentMonthDemand = mockCurrentMonthDemand(store.store_id)
 
   return {
     type: 'Feature',
@@ -114,17 +143,17 @@ function toWarehouseFeature(
       name: store.store_name ?? store.store_id,
       zone: latestRow?.zone ?? latestRow?.emirate ?? '',
       capacitySqm: mockCapacitySqm(store.store_id),
-      utilizationPercent: 0,
-      activeShipments: 0,
-      staff: 0,
+      utilizationPercent: mockUtilizationPercent(store.store_id),
+      activeShipments: mockActiveShipments(store.store_id),
+      staff: mockStaff(store.store_id),
       status: 'Unknown',
       isMainBranch: false,
       couriers: latestRow ? latestRow.available_permanent + latestRow.available_outsourced : 0,
       avgCourierKpi: mockAvgCourierKpi(store.store_id),
       courierLoadPercent,
       driverStatus: store.status,
-      currentMonthDemand: 0,
-      nextMonthDemand: 0,
+      currentMonthDemand,
+      nextMonthDemand: mockNextMonthDemand(store.store_id, currentMonthDemand),
     },
   }
 }

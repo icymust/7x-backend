@@ -29,35 +29,11 @@ commentary before or after), matching exactly this shape:
 
 {{
   "recommendation": "one clear, human-friendly sentence naming the action type and courier count",
-  "impact": [
-    {{"feature": "one or two plain words, e.g. 'Coverage' or 'Couriers' - never a raw JSON field name", "delta": "a short, self-contained, unambiguous phrase for an INCREASE, always starting with +, e.g. '+3 couriers added' or '+38% coverage' or '+5 couriers now available'", "positive": true}}
-  ],
   "timing": "one human-friendly sentence - see the timing rule below for what it must cover",
   "reasons": ["short standalone statement", "short standalone statement"]
 }}
 
 Rules:
-- "impact" must have 2 to 4 entries derived only from evidence.peak_gap
-  (required_couriers, available_couriers, shortage_before_action,
-  action_gap_couriers) and the evidence totals (predicted_orders_total,
-  baseline_orders_total, prediction_correction_total). Every entry must
-  describe something going UP as a result of the action - coverage
-  increasing, couriers/outsourced staff added, couriers now available.
-  "positive" is always true. Never report a metric as shrinking or
-  decreasing (e.g. never phrase the shortage as "-3 shortage remaining" or
-  similar) - if you want to reference the shortage closing, express it as
-  the increase that closes it instead (e.g. "+3 couriers added" covering
-  the gap), not as a negative number. Never use a raw field name like
-  "shortage_before_action" as "feature" - translate it to a short
-  plain-language label instead.
-- Each "impact" entry must be a genuinely distinct metric. Never include two
-  entries that restate the same underlying number in different words (e.g.
-  "+3 couriers added" and "+3 couriers now available" both just describe the
-  same headcount increase - keep only one of them). Prefer covering
-  different things instead: one about couriers/outsourced headcount, one
-  about coverage percent, one about orders, and so on.
-- "delta" is shown to the user on its own, with no separate label next to
-  it, so it must be unambiguous by itself and always start with "+".
 - "timing" must state deadline in every case. If action_type is
   "permanent_hiring", state ONLY the deadline - do not mention
   shortage_period.date_from or date_to for a hiring suggestion. For every
@@ -81,9 +57,9 @@ def is_ollama_enabled() -> bool:
 
 
 def _parse_selected_action_message(raw: str) -> dict | None:
-    """Validates the selected-action JSON shape (recommendation/impact/timing/
-    reasons) so a non-compliant model response falls back to
-    structured_fallback instead of handing the frontend a malformed object."""
+    """Validates the selected-action JSON shape (recommendation/timing/reasons)
+    so a non-compliant model response falls back to structured_fallback
+    instead of handing the frontend a malformed object."""
     try:
         parsed = json.loads(raw)
     except (ValueError, TypeError):
@@ -96,11 +72,6 @@ def _parse_selected_action_message(raw: str) -> dict | None:
         return None
 
     if not isinstance(parsed.get("timing"), str):
-        return None
-
-    impact = parsed.get("impact")
-
-    if not isinstance(impact, list) or not all(isinstance(item, dict) for item in impact):
         return None
 
     reasons = parsed.get("reasons")

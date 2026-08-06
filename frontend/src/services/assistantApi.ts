@@ -1,19 +1,14 @@
 import { apiPost } from './apiClient'
 
-export interface ExplanationImpact {
-  feature: string
-  delta: string
-  positive: boolean
-}
-
 // The natural-language explanation for one Decision Engine action, as a
 // structured object rather than free-form prose - see SELECTED_ACTION_PROMPT
 // in the backend's llm_service.py, which prompts Ollama for exactly this
 // shape (and the backend validates it before returning, so if this type is
-// present it's already well-formed).
+// present it's already well-formed). The courier count itself is shown
+// straight from the Decision Engine's own action.couriers field instead of
+// asking Ollama to restate it (see WarehouseAiSuggestions.vue).
 export interface SelectedActionExplanation {
   recommendation: string
-  impact: ExplanationImpact[]
   timing: string
   reasons: string[]
 }

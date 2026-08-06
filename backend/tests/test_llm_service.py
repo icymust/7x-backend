@@ -18,7 +18,6 @@ class FakeResponse:
 
 SELECTED_ACTION_JSON = (
     '{"recommendation": "Add 10 outsourced couriers today.", '
-    '"impact": [{"feature": "Shortage", "delta": "-10 couriers", "positive": true}], '
     '"timing": "Runs 2026-08-01 to 2026-08-01, deadline 2026-08-01.", '
     '"reasons": ["Short-term shortage requires immediate outsourcing."]}'
 )
@@ -99,9 +98,6 @@ def test_returns_explanation_from_ollama(monkeypatch):
 
     assert result == {
         "recommendation": "Add 10 outsourced couriers today.",
-        "impact": [
-            {"feature": "Shortage", "delta": "-10 couriers", "positive": True}
-        ],
         "timing": "Runs 2026-08-01 to 2026-08-01, deadline 2026-08-01.",
         "reasons": ["Short-term shortage requires immediate outsourcing."],
     }
@@ -112,9 +108,6 @@ def test_returns_explanation_from_ollama(monkeypatch):
     assert captured_request["body"]["think"] is False
     assert captured_request["body"]["format"] == "json"
     assert '"recommendation"' in (
-        captured_request["body"]["messages"][0]["content"]
-    )
-    assert '"impact"' in (
         captured_request["body"]["messages"][0]["content"]
     )
     assert '"timing"' in (

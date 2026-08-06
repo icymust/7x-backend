@@ -28,6 +28,11 @@ interface SuggestionMessage {
   icon: string
   color: string
   priority: DecisionPriority
+  // Shown as a plain "N couriers" tag straight from the Decision Engine's
+  // own action - not asked of Ollama, since a plain headcount doesn't need
+  // an LLM and free-form phrasing of it was error-prone (ambiguous signs,
+  // duplicated wording across entries).
+  couriers: number
   explanation: SelectedActionExplanation | null
   explaining: boolean
   // Reasons are collapsed by default - only the recommendation/impact/timing
@@ -96,18 +101,12 @@ function messageFor(action: DecisionAction): SuggestionMessage {
     icon: ACTION_TYPE_META[action.action_type].icon,
     color: PRIORITY_COLOR[action.priority],
     priority: action.priority,
+    couriers: action.couriers,
     explanation: null,
     explaining: true,
     reasonsExpanded: false,
     resolveAction: resolveActionFor(action),
   }
-}
-
-// Delta strings occasionally arrive without a leading sign; "positive" is
-// the only signal available to infer one defensively.
-function normalizeDelta(delta: string, positive: boolean): string {
-  const trimmed = delta.trim()
-  return /^[+-]/.test(trimmed) ? trimmed : `${positive ? '+' : '-'}${trimmed}`
 }
 
 // Fallback for when Ollama is disabled/unavailable, the explain call fails,
@@ -119,7 +118,6 @@ function fallbackExplanation(action: DecisionAction): SelectedActionExplanation 
   const range = `${dateLabel(action.shortage_period.date_from)} - ${dateLabel(action.shortage_period.date_to)}`
   return {
     recommendation: `${action.couriers} couriers needed for ${ACTION_TYPE_META[action.action_type].title.toLowerCase()}.`,
-    impact: [{ feature: 'Couriers', delta: `+${action.couriers}`, positive: true }],
     timing: `${range}, deadline ${dateLabel(action.deadline)}.`,
     reasons: [action.reason.replace(/_/g, ' ')],
   }
@@ -207,18 +205,10 @@ watch(
               {{ message.explanation.recommendation }}
             </p>
 
-            <div
-              v-if="message.explanation.impact.length"
-              class="ai-suggestions__impact ai-suggestions__block--fade-in"
-              style="animation-delay: 0.1s"
-            >
-              <span
-                v-for="(item, index) in message.explanation.impact"
-                :key="index"
-                class="ai-suggestions__impact-chip"
-              >
-                <i :class="item.positive ? 'pi pi-arrow-up-right ai-suggestions__impact-icon--positive' : 'pi pi-arrow-down-right ai-suggestions__impact-icon--negative'" />
-                {{ normalizeDelta(item.delta, item.positive) }}
+            <div class="ai-suggestions__impact ai-suggestions__block--fade-in" style="animation-delay: 0.1s">
+              <span class="ai-suggestions__impact-chip">
+                <i class="pi pi-users" />
+                {{ message.couriers }} {{ message.couriers === 1 ? 'courier' : 'couriers' }}
               </span>
             </div>
 
@@ -385,14 +375,7 @@ watch(
 
 .ai-suggestions__impact-chip .pi {
   font-size: 0.65rem;
-}
-
-.ai-suggestions__impact-icon--positive {
-  color: #16a34a;
-}
-
-.ai-suggestions__impact-icon--negative {
-  color: #dc2626;
+  color: var(--brand-blue);
 }
 
 .ai-suggestions__timing {
