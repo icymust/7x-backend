@@ -243,9 +243,20 @@ GET /api/planning-runs/1/decision-plan?store_id=QED_DXB_01
 
 Decision Engine всегда рассчитывает общий план по всем складам, поэтому фильтр
 не скрывает доступный surplus других stores. После расчёта response оставляет
-actions, где выбранный склад указан в `store_id` как получатель решения либо в
-`from_store_id` как источник transfer. Без фильтра возвращаются все actions.
-Response всегда содержит поле `store_id`: выбранное значение или `null`.
+не более четырёх AI Suggestions, где выбранный склад указан в `store_id` как
+получатель решения. Исходящие transfers этого склада в его suggestions не
+попадают. Без фильтра возвращается полный operational plan. Response всегда
+содержит поле `store_id`: выбранное значение или `null`.
+
+MVP selector выбирает максимум по одной лучшей карточке каждой категории:
+
+- transfer из склада того же emirate;
+- transfer из другого emirate;
+- срочный или planned outsourcing;
+- permanent hiring.
+
+Внутри категории приоритет имеет более срочное действие, затем большее число
+курьеров. Отсутствующая категория не заменяется выдуманной рекомендацией.
 
 Горизонты:
 
@@ -312,7 +323,9 @@ Shortage считается `persistent`, если присутствует ми
 
 `store_transfer` имеет `status: active_rule_based`, использует только свободный
 surplus и требует подтверждения менеджера. Store того же emirate получает
-приоритет. `schedule_reallocation` и `overtime` остаются
+приоритет. Action также содержит `from_emirate`, `to_emirate` и
+`transfer_scope` (`same_emirate` или `cross_emirate`).
+`schedule_reallocation` и `overtime` остаются
 `pending_input_data`, поскольку daily plan не содержит внутридневной сменной
 ёмкости и допустимого overtime. `limitations` явно описывает эти границы.
 

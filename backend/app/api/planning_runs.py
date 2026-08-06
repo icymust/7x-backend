@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.engines.comparison import compare_plans
 from app.engines.daily_summary import build_daily_summaries
-from app.engines.decision_plan import build_decision_plan
+from app.engines.decision_plan import (
+    build_decision_plan,
+    select_store_suggestions,
+)
 from app.engines.kpis import build_operational_kpis
 from app.engines.notifications import build_notifications
 from app.models import Dataset, PlanningRun
@@ -357,12 +360,10 @@ def get_planning_run_decision_plan(
     )
 
     if store_id:
-        actions = [
-            action
-            for action in decision_plan["actions"]
-            if action["store_id"] == store_id
-            or action.get("from_store_id") == store_id
-        ]
+        actions = select_store_suggestions(
+            decision_plan["actions"],
+            store_id,
+        )
         decision_plan = {
             **decision_plan,
             "actions_count": len(actions),

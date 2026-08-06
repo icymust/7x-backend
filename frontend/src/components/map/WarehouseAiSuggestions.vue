@@ -41,9 +41,8 @@ interface SuggestionMessage {
   explaining: boolean
   // The action (managed in the "Manage" tab) that actually resolves this
   // case, with the numbers/date the Decision Engine itself calls for - null
-  // for horizons the engine can't act on yet (schedule_reallocation,
-  // overtime - see decision_stages.pending_input_data) or a transfer where
-  // this store is the surplus source rather than the recipient.
+  // for horizons the engine can't act on yet (schedule_reallocation and
+  // overtime - see decision_stages.pending_input_data).
   resolveAction: { action: SuggestionAction; count: number; startDate: Date; source?: string } | null
 }
 
@@ -108,7 +107,15 @@ function resolveActionFor(action: DecisionAction): SuggestionMessage['resolveAct
 }
 
 function messageFor(action: DecisionAction): SuggestionMessage {
-  const meta = ACTION_TYPE_META[action.action_type]
+  const defaultMeta = ACTION_TYPE_META[action.action_type]
+  const meta = action.action_type === 'store_transfer'
+    ? {
+        icon: defaultMeta.icon,
+        title: action.transfer_scope === 'same_emirate'
+          ? 'Transfer from nearby warehouse'
+          : 'Transfer from another emirate',
+      }
+    : defaultMeta
   return {
     id: action.action_id,
     icon: meta.icon,
@@ -162,12 +169,12 @@ async function loadSuggestions() {
   try {
     const { planningRunId: runId, actions: decisionActions } = await fetchDecisionPlanActions(props.storeId)
     planningRunId = runId
-    suggestionMessages.value = decisionActions.map(messageFor)
+    suggestionMessages.value = decisionActions.slice(0, 4).map(messageFor)
     loadingActions.value = false
 
     // Each card's explanation streams in independently - a slow or failed
     // Ollama call on one action shouldn't hold up the others.
-    decisionActions.forEach((action, index) => {
+    decisionActions.slice(0, 4).forEach((action, index) => {
       const message = suggestionMessages.value[index]
       if (message) explainInto(action, message)
     })

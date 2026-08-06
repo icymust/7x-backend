@@ -662,7 +662,9 @@ WAPE improvement: 0.0508 percentage points
   operational data.
 - Decision Plan API поддерживает optional `store_id`, чтобы frontend получал
   AI Suggestions выбранного склада. Общий transfer plan рассчитывается до
-  фильтрации, поэтому сохраняются входящие и исходящие transfer actions.
+  фильтрации; после неё остаются только входящие действия этого склада и
+  максимум четыре разные карточки: local transfer, cross-emirate transfer,
+  outsourcing и permanent hiring.
 - Notification Engine и API для urgent shortage, upcoming shortage, hiring
   deadline и staff surplus alerts.
 - Explanation Context Builder для компактной передачи готовых

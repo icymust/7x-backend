@@ -15,6 +15,9 @@ export interface DecisionAction {
   action_id: string
   store_id: string
   from_store_id?: string
+  from_emirate?: string
+  to_emirate?: string
+  transfer_scope?: 'same_emirate' | 'cross_emirate'
   shortage_period: { date_from: string; date_to: string }
   shortage_type: string
   time_horizon: string

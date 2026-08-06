@@ -1,4 +1,7 @@
-from app.engines.decision_plan import build_decision_plan
+from app.engines.decision_plan import (
+    build_decision_plan,
+    select_store_suggestions,
+)
 
 
 def plan_row(
@@ -111,11 +114,63 @@ def test_transfers_same_day_surplus_for_short_term_shortage():
     assert action["action_id"].endswith(":DXB-002")
     assert action["time_horizon"] == "one_to_three_days"
     assert action["from_store_id"] == "DXB-002"
+    assert action["from_emirate"] == "Dubai"
+    assert action["to_emirate"] == "Dubai"
+    assert action["transfer_scope"] == "same_emirate"
     assert action["store_id"] == "DXB-001"
     assert action["couriers"] == 4
     assert action["requires_manager_confirmation"] is True
     assert action["evidence"]["peak_gap"]["shortage_before_action"] == 4
     assert action["evidence"]["peak_gap"]["action_gap_couriers"] == 4
+
+
+def test_selects_at_most_four_diverse_store_suggestions():
+    def action(
+        action_id: str,
+        action_type: str,
+        couriers: int,
+        priority: str,
+        transfer_scope: str | None = None,
+        store_id: str = "DXB-001",
+    ) -> dict:
+        return {
+            "action_id": action_id,
+            "action_type": action_type,
+            "store_id": store_id,
+            "couriers": couriers,
+            "priority": priority,
+            "deadline": "2026-08-01",
+            "transfer_scope": transfer_scope,
+        }
+
+    result = select_store_suggestions(
+        [
+            action("local-small", "store_transfer", 2, "high", "same_emirate"),
+            action("local-large", "store_transfer", 5, "high", "same_emirate"),
+            action("cross-small", "store_transfer", 3, "high", "cross_emirate"),
+            action("cross-large", "store_transfer", 6, "high", "cross_emirate"),
+            action("urgent", "emergency_outsourcing", 3, "critical"),
+            action("planned", "planned_outsourcing", 10, "high"),
+            action("permanent", "permanent_hiring", 8, "medium"),
+            action(
+                "another-store",
+                "emergency_outsourcing",
+                20,
+                "critical",
+                store_id="AUH-001",
+            ),
+        ],
+        "DXB-001",
+    )
+
+    assert len(result) == 4
+    assert {item["action_id"] for item in result} == {
+        "local-large",
+        "cross-large",
+        "urgent",
+        "permanent",
+    }
+    assert {item["store_id"] for item in result} == {"DXB-001"}
 
 
 def test_uses_emergency_outsourcing_when_transfer_surplus_is_insufficient():
