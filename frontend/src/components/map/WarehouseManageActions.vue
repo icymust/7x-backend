@@ -13,7 +13,17 @@ import {
   durationOptions,
   employmentOptions,
   useWarehouseActionDialog,
+  type ActionId,
 } from '../../composables/useWarehouseActionDialog'
+import transferIllustration from '../../assets/illustrations/transfer.jpeg'
+import outsourceIllustration from '../../assets/illustrations/outsource.jpeg'
+import interviewIllustration from '../../assets/illustrations/interview.jpeg'
+
+const ACTION_ILLUSTRATION: Record<ActionId, string> = {
+  transport: transferIllustration,
+  outsource: outsourceIllustration,
+  hire: interviewIllustration,
+}
 
 const props = defineProps<{ warehouseName: string }>()
 
@@ -73,87 +83,110 @@ watch(
     <Dialog
       v-model:visible="dialogVisible"
       modal
-      :header="activeAction?.title"
-      :style="{ width: '26rem' }"
+      :show-header="false"
+      :style="{ width: '40rem' }"
+      :pt="{ content: { style: { padding: 0 } } }"
       class="manage-actions__dialog"
     >
-      <Transition name="dialog-swap" mode="out-in">
-        <div v-if="!submitted" key="form" class="manage-actions__form">
-          <template v-if="activeAction?.id === 'transport'">
-            <div class="manage-actions__field">
-              <label>Source Warehouse</label>
-              <Select v-model="transportForm.source" :options="otherWarehouseNames" fluid placeholder="Select a branch" />
-            </div>
-            <div class="manage-actions__field">
-              <label>Drivers to Transfer</label>
-              <InputNumber v-model="transportForm.count" :min="1" :max="20" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Transfer Date</label>
-              <DatePicker v-model="transportForm.date" date-format="M dd, yy" placeholder="Select a date" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Notes <span class="manage-actions__optional">(optional)</span></label>
-              <Textarea v-model="transportForm.notes" rows="2" fluid placeholder="Any special instructions..." />
-            </div>
-          </template>
+      <div class="manage-actions__dialog-body">
+        <Button
+          icon="pi pi-times"
+          text
+          rounded
+          size="small"
+          aria-label="Close"
+          class="manage-actions__close"
+          @click="closeDialog"
+        />
 
-          <template v-else-if="activeAction?.id === 'outsource'">
-            <div class="manage-actions__field">
-              <label>Staffing Agency</label>
-              <Select v-model="outsourceForm.agency" :options="agencyOptions" fluid />
+        <Transition name="dialog-swap" mode="out-in">
+          <div v-if="!submitted" key="form" class="manage-actions__split">
+            <div class="manage-actions__illustration-side">
+              <img v-if="activeAction" :src="ACTION_ILLUSTRATION[activeAction.id]" alt="" class="manage-actions__illustration" />
             </div>
-            <div class="manage-actions__field">
-              <label>Workers Needed</label>
-              <InputNumber v-model="outsourceForm.count" :min="1" :max="50" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Contract Duration</label>
-              <Select v-model="outsourceForm.duration" :options="durationOptions" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Start Date</label>
-              <DatePicker v-model="outsourceForm.startDate" date-format="M dd, yy" placeholder="Select a date" fluid />
-            </div>
-          </template>
 
-          <template v-else-if="activeAction?.id === 'hire'">
-            <div class="manage-actions__field">
-              <label>Positions to Open</label>
-              <InputNumber v-model="hireForm.positions" :min="1" :max="20" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Employment Type</label>
-              <Select v-model="hireForm.employmentType" :options="employmentOptions" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Target Start Date</label>
-              <DatePicker v-model="hireForm.startDate" date-format="M dd, yy" placeholder="Select a date" fluid />
-            </div>
-            <div class="manage-actions__field">
-              <label>Notes <span class="manage-actions__optional">(optional)</span></label>
-              <Textarea v-model="hireForm.notes" rows="2" fluid placeholder="Role requirements, shift, etc." />
-            </div>
-          </template>
+            <div class="manage-actions__form-side">
+              <h3 class="manage-actions__title">{{ activeAction?.title }}</h3>
 
-          <Button
-            label="Submit Request"
-            icon="pi pi-send"
-            class="manage-actions__submit"
-            :loading="submitting"
-            @click="handleSubmit"
-          />
-        </div>
+              <div class="manage-actions__fields">
+              <template v-if="activeAction?.id === 'transport'">
+                <div class="manage-actions__field">
+                  <label>Source Warehouse</label>
+                  <Select v-model="transportForm.source" :options="otherWarehouseNames" fluid placeholder="Select a branch" />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Drivers to Transfer</label>
+                  <InputNumber v-model="transportForm.count" :min="1" :max="20" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Transfer Date</label>
+                  <DatePicker v-model="transportForm.date" date-format="M dd, yy" placeholder="Select a date" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Notes <span class="manage-actions__optional">(optional)</span></label>
+                  <Textarea v-model="transportForm.notes" rows="2" fluid placeholder="Any special instructions..." />
+                </div>
+              </template>
 
-        <div v-else key="success" class="manage-actions__success">
-          <span class="manage-actions__success-icon"><i class="pi pi-check" /></span>
-          <h4 class="manage-actions__success-title">Form submitted successfully</h4>
-          <p class="manage-actions__success-text">
-            Your {{ activeAction?.title.toLowerCase() }} request has been sent for review.
-          </p>
-          <Button label="Done" text class="manage-actions__done" @click="closeDialog" />
-        </div>
-      </Transition>
+              <template v-else-if="activeAction?.id === 'outsource'">
+                <div class="manage-actions__field">
+                  <label>Staffing Agency</label>
+                  <Select v-model="outsourceForm.agency" :options="agencyOptions" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Workers Needed</label>
+                  <InputNumber v-model="outsourceForm.count" :min="1" :max="50" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Contract Duration</label>
+                  <Select v-model="outsourceForm.duration" :options="durationOptions" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Start Date</label>
+                  <DatePicker v-model="outsourceForm.startDate" date-format="M dd, yy" placeholder="Select a date" fluid />
+                </div>
+              </template>
+
+              <template v-else-if="activeAction?.id === 'hire'">
+                <div class="manage-actions__field">
+                  <label>Positions to Open</label>
+                  <InputNumber v-model="hireForm.positions" :min="1" :max="20" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Employment Type</label>
+                  <Select v-model="hireForm.employmentType" :options="employmentOptions" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Target Start Date</label>
+                  <DatePicker v-model="hireForm.startDate" date-format="M dd, yy" placeholder="Select a date" fluid />
+                </div>
+                <div class="manage-actions__field">
+                  <label>Notes <span class="manage-actions__optional">(optional)</span></label>
+                  <Textarea v-model="hireForm.notes" rows="2" fluid placeholder="Role requirements, shift, etc." />
+                </div>
+              </template>
+              </div>
+
+              <Button
+                label="Submit Request"
+                icon="pi pi-send"
+                class="manage-actions__submit"
+                :loading="submitting"
+                @click="handleSubmit"
+              />
+            </div>
+          </div>
+
+          <div v-else key="success" class="manage-actions__success">
+            <span class="manage-actions__success-icon"><i class="pi pi-check" /></span>
+            <h4 class="manage-actions__success-title">Form submitted successfully</h4>
+            <p class="manage-actions__success-text">
+              Your {{ activeAction?.title.toLowerCase() }} request has been sent for review.
+            </p>
+            <Button label="Done" text class="manage-actions__done" @click="closeDialog" />
+          </div>
+        </Transition>
+      </div>
     </Dialog>
   </div>
 </template>
@@ -251,7 +284,80 @@ watch(
   transform: translateX(3px);
 }
 
-.manage-actions__form {
+/* The default Dialog header is turned off (see :show-header="false" in the
+   template) specifically so the picture can run the dialog's full height,
+   top edge to bottom edge, instead of starting below a header row shared
+   with the form side. The title moves down into the form column instead -
+   see .manage-actions__title. */
+.manage-actions__dialog-body {
+  position: relative;
+  /* .p-dialog itself doesn't clip its content to its own rounded corners
+     (overflow: visible), so without this the illustration's square corners
+     poke past the panel's rounded shape at the top-left/bottom-left. */
+  overflow: hidden;
+  border-radius: var(--p-dialog-border-radius);
+}
+
+.manage-actions__close.p-button {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1;
+  color: var(--p-text-muted-color);
+}
+
+/* 50/50 split, edge to edge - the Dialog's own content padding is zeroed
+   via :pt (see template) so the picture side can bleed flush to all four
+   of the panel's edges instead of sitting in an inset thumbnail. */
+.manage-actions__split {
+  display: flex;
+  align-items: stretch;
+  min-height: 24rem;
+}
+
+.manage-actions__illustration-side {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* A soft shadow standing in for a hard border line along the seam between
+   the picture and the form - reads as the picture receding slightly rather
+   than the two halves just butting into each other. */
+.manage-actions__illustration-side::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset -14px 0 18px -14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.manage-actions__illustration {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.manage-actions__form-side {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.75rem 1.5rem 1.5rem;
+}
+
+.manage-actions__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--p-text-color);
+  letter-spacing: -0.01em;
+}
+
+.manage-actions__fields {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
@@ -284,7 +390,7 @@ watch(
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 0.75rem 0.5rem 0.25rem;
+  padding: 1.75rem 1.5rem 1.5rem;
 }
 
 .manage-actions__success-icon {
