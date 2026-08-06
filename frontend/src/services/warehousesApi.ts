@@ -98,3 +98,22 @@ export function latestRowPerStore(rows: BackendPlanRow[]): BackendPlanRow[] {
 
   return [...latestByStore.values()]
 }
+
+// Every row for a store, not collapsed to one - for aggregating across the
+// whole plan (matching the window the backend's own /stores status is
+// computed over: _store_month_status() sums required/available across every
+// row for that store, not just one day).
+export function rowsByStore(rows: BackendPlanRow[]): Map<string, BackendPlanRow[]> {
+  const grouped = new Map<string, BackendPlanRow[]>()
+
+  for (const row of rows) {
+    const existing = grouped.get(row.store_id)
+    if (existing) {
+      existing.push(row)
+    } else {
+      grouped.set(row.store_id, [row])
+    }
+  }
+
+  return grouped
+}

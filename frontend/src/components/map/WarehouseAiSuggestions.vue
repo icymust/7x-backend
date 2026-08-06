@@ -9,7 +9,7 @@ import {
   type DecisionActionType,
   type DecisionPriority,
 } from '../../services/decisionPlanApi'
-import { explainDecisionAction } from '../../services/assistantApi'
+import { explainDecisionAction, type SelectedActionExplanation } from '../../services/assistantApi'
 import { actionById, useWarehouseActionDialog, type SuggestionAction } from '../../composables/useWarehouseActionDialog'
 
 const props = defineProps<{ storeId: string; isOpen: boolean }>()
@@ -19,26 +19,20 @@ const { openAction } = useWarehouseActionDialog()
 // The Decision Engine (GET .../decision-plan) computes *what* to do -
 // rule-based, no natural-language attached. The "message" for each card
 // comes from a separate call to POST /assistant/explain, which is what
-// actually runs it through Ollama. Loaded lazily - see the isOpen watcher -
+// actually runs it through Ollama and returns the structured
+// SelectedActionExplanation shape. Loaded lazily - see the isOpen watcher -
 // rather than on mount, since this component stays mounted (just hidden)
 // while its accordion panel is collapsed.
-// One parsed bullet from the explain message - "label" is the leading
-// "Recommendation"/"Evidence"/"Timing"/"Reason" tag the prompt asks Ollama
-// for (see SELECTED_ACTION_PROMPT in llm_service.py), null for lines that
-// don't match that shape (e.g. the plain-sentence fallback).
-interface ExplanationLine {
-  label: string | null
-  text: string
-}
-
 interface SuggestionMessage {
   id: string
   icon: string
   color: string
   priority: DecisionPriority
-  title: string
-  lines: ExplanationLine[]
+  explanation: SelectedActionExplanation | null
   explaining: boolean
+  // Reasons are collapsed by default - only the recommendation/impact/timing
+  // show up front, see the toggle button in the template.
+  reasonsExpanded: boolean
   // The action (managed in the "Manage" tab) that actually resolves this
   // case, with the numbers/date the Decision Engine itself calls for - null
   // for horizons the engine can't act on yet (schedule_reallocation and
@@ -52,16 +46,6 @@ const PRIORITY_COLOR: Record<DecisionPriority, string> = {
   medium: '#2563eb',
   low: '#16a34a',
 }
-
-// Placeholder line widths for the skeleton, one entry per eventual bullet
-// (Recommendation/Evidence/Timing/Reason - see SELECTED_ACTION_PROMPT in
-// llm_service.py) shaped to roughly match how those bullets actually wrap.
-const SKELETON_SECTIONS: string[][] = [
-  ['55%'],
-  ['100%', '80%'],
-  ['70%'],
-  ['100%', '60%'],
-]
 
 const ACTION_TYPE_META: Record<DecisionActionType, { icon: string; title: string }> = {
   emergency_outsourcing: { icon: 'pi pi-exclamation-triangle', title: 'Emergency outsourcing' },
@@ -107,57 +91,46 @@ function resolveActionFor(action: DecisionAction): SuggestionMessage['resolveAct
 }
 
 function messageFor(action: DecisionAction): SuggestionMessage {
-  const defaultMeta = ACTION_TYPE_META[action.action_type]
-  const meta = action.action_type === 'store_transfer'
-    ? {
-        icon: defaultMeta.icon,
-        title: action.transfer_scope === 'same_emirate'
-          ? 'Transfer from nearby warehouse'
-          : 'Transfer from another emirate',
-      }
-    : defaultMeta
   return {
     id: action.action_id,
-    icon: meta.icon,
+    icon: ACTION_TYPE_META[action.action_type].icon,
     color: PRIORITY_COLOR[action.priority],
     priority: action.priority,
-    title: meta.title,
-    lines: [],
+    explanation: null,
     explaining: true,
+    reasonsExpanded: false,
     resolveAction: resolveActionFor(action),
   }
 }
 
-// Ollama is prompted (see SELECTED_ACTION_PROMPT in llm_service.py) for
-// exactly four "- Label: sentence." bullets, but returns them joined by a
-// literal "\n" - not an actual line break - so a plain newline split does
-// nothing; this splits on both to be safe either way, strips the leading
-// "- " markdown bullet, and pulls the label out of each line so it can be
-// rendered as its own list item instead of one run-on paragraph.
-function parseExplanation(raw: string): ExplanationLine[] {
-  return raw
-    .split(/\\n|\n/)
-    .map((line) => line.trim().replace(/^-+\s*/, ''))
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/^([A-Za-z][A-Za-z\s]{1,24}):\s*(.+)$/)
-      return match ? { label: match[1].trim(), text: match[2].trim() } : { label: null, text: line }
-    })
+// Delta strings occasionally arrive without a leading sign; "positive" is
+// the only signal available to infer one defensively.
+function normalizeDelta(delta: string, positive: boolean): string {
+  const trimmed = delta.trim()
+  return /^[+-]/.test(trimmed) ? trimmed : `${positive ? '+' : '-'}${trimmed}`
 }
 
-// Fallback for when Ollama is disabled/unavailable or the explain call
-// fails - built straight from the action's own fields so it never depends
-// on the LLM being up.
-function fallbackLines(action: DecisionAction): ExplanationLine[] {
-  return [{ label: null, text: `${action.couriers} couriers needed by ${dateLabel(action.deadline)} (${action.priority} priority).` }]
+// Fallback for when Ollama is disabled/unavailable, the explain call fails,
+// or the response didn't match the expected shape (backend already
+// validates this - see _parse_selected_action_message in llm_service.py -
+// so a non-null result.message can be trusted as-is). Built straight from
+// the action's own fields so it never depends on the LLM being up.
+function fallbackExplanation(action: DecisionAction): SelectedActionExplanation {
+  const range = `${dateLabel(action.shortage_period.date_from)} - ${dateLabel(action.shortage_period.date_to)}`
+  return {
+    recommendation: `${action.couriers} couriers needed for ${ACTION_TYPE_META[action.action_type].title.toLowerCase()}.`,
+    impact: [{ feature: 'Couriers', delta: `+${action.couriers}`, positive: true }],
+    timing: `${range}, deadline ${dateLabel(action.deadline)}.`,
+    reasons: [action.reason.replace(/_/g, ' ')],
+  }
 }
 
 async function explainInto(action: DecisionAction, message: SuggestionMessage) {
   try {
     const result = await explainDecisionAction(planningRunId, action.action_id)
-    message.lines = result.message ? parseExplanation(result.message) : fallbackLines(action)
+    message.explanation = result.message ?? fallbackExplanation(action)
   } catch {
-    message.lines = fallbackLines(action)
+    message.explanation = fallbackExplanation(action)
   } finally {
     message.explaining = false
   }
@@ -216,42 +189,77 @@ watch(
       >
         <span class="ai-suggestions__message-icon"><i :class="message.icon" /></span>
         <div class="ai-suggestions__message-body">
-          <span class="ai-suggestions__message-title">{{ message.title }}</span>
           <div v-if="message.explaining" class="ai-suggestions__skeleton">
-            <div
-              v-for="(widths, sectionIndex) in SKELETON_SECTIONS"
-              :key="sectionIndex"
-              class="ai-suggestions__skeleton-section"
-            >
-              <Skeleton
-                v-for="(width, lineIndex) in widths"
-                :key="lineIndex"
-                height="0.65rem"
-                :width="width"
-                class="ai-suggestions__skeleton-line"
-              />
+            <Skeleton height="0.7rem" width="92%" class="ai-suggestions__skeleton-line" />
+            <div class="ai-suggestions__skeleton-pills">
+              <Skeleton height="1.3rem" width="38%" border-radius="999px" />
+              <Skeleton height="1.3rem" width="30%" border-radius="999px" />
+            </div>
+            <Skeleton height="0.65rem" width="70%" class="ai-suggestions__skeleton-line" />
+            <div class="ai-suggestions__skeleton-section">
+              <Skeleton height="0.65rem" width="100%" class="ai-suggestions__skeleton-line" />
+              <Skeleton height="0.65rem" width="55%" class="ai-suggestions__skeleton-line" />
             </div>
             <Skeleton width="7.5rem" height="1.9rem" border-radius="6px" class="ai-suggestions__skeleton-button" />
           </div>
-          <template v-else>
-            <ul class="ai-suggestions__message-lines">
-              <li
-                v-for="(line, index) in message.lines"
+          <template v-else-if="message.explanation">
+            <p class="ai-suggestions__recommendation ai-suggestions__block--fade-in">
+              {{ message.explanation.recommendation }}
+            </p>
+
+            <div
+              v-if="message.explanation.impact.length"
+              class="ai-suggestions__impact ai-suggestions__block--fade-in"
+              style="animation-delay: 0.1s"
+            >
+              <span
+                v-for="(item, index) in message.explanation.impact"
                 :key="index"
-                class="ai-suggestions__message-line ai-suggestions__message-line--fade-in"
-                :style="{ animationDelay: `${index * 0.12}s` }"
+                class="ai-suggestions__impact-chip"
               >
-                <strong v-if="line.label">{{ line.label }}:</strong> {{ line.text }}
-              </li>
-            </ul>
+                <i :class="item.positive ? 'pi pi-arrow-up-right ai-suggestions__impact-icon--positive' : 'pi pi-arrow-down-right ai-suggestions__impact-icon--negative'" />
+                {{ normalizeDelta(item.delta, item.positive) }}
+              </span>
+            </div>
+
+            <p class="ai-suggestions__timing ai-suggestions__block--fade-in" style="animation-delay: 0.2s">
+              <i class="pi pi-calendar" /> {{ message.explanation.timing }}
+            </p>
+
+            <button
+              v-if="message.explanation.reasons.length"
+              type="button"
+              class="ai-suggestions__reasons-toggle ai-suggestions__block--fade-in"
+              style="animation-delay: 0.25s"
+              @click="message.reasonsExpanded = !message.reasonsExpanded"
+            >
+              <i :class="message.reasonsExpanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              {{ message.reasonsExpanded ? 'Hide reasons' : `Show reasons (${message.explanation.reasons.length})` }}
+            </button>
+
+            <Transition name="ai-suggestions__reasons">
+              <div v-if="message.reasonsExpanded" class="ai-suggestions__reasons-collapse">
+                <ul class="ai-suggestions__message-lines">
+                  <li
+                    v-for="(reason, index) in message.explanation.reasons"
+                    :key="index"
+                    class="ai-suggestions__message-line ai-suggestions__block--fade-in"
+                    :style="{ animationDelay: `${index * 0.1}s` }"
+                  >
+                    {{ reason }}
+                  </li>
+                </ul>
+              </div>
+            </Transition>
+
             <Button
               v-if="message.resolveAction"
               size="small"
               outlined
               :icon="message.resolveAction.action.icon"
               :label="message.resolveAction.action.title"
-              class="ai-suggestions__message-action ai-suggestions__message-action--fade-in"
-              :style="{ animationDelay: `${message.lines.length * 0.12}s` }"
+              class="ai-suggestions__message-action ai-suggestions__block--fade-in"
+              style="animation-delay: 0.3s"
               @click="
                 openAction(message.resolveAction.action, {
                   count: message.resolveAction.count,
@@ -292,7 +300,7 @@ watch(
 .ai-suggestions__messages {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.9rem;
 }
 
 .ai-suggestions__message {
@@ -323,19 +331,18 @@ watch(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-}
-
-.ai-suggestions__message-title {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--p-text-color);
+  gap: 0.55rem;
 }
 
 .ai-suggestions__skeleton {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.ai-suggestions__skeleton-pills {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .ai-suggestions__skeleton-section {
@@ -348,6 +355,79 @@ watch(
   margin-top: 0.15rem;
 }
 
+.ai-suggestions__recommendation {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--p-text-color);
+}
+
+.ai-suggestions__impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ai-suggestions__impact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--p-content-border-color);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--p-text-color);
+  white-space: nowrap;
+}
+
+.ai-suggestions__impact-chip .pi {
+  font-size: 0.65rem;
+}
+
+.ai-suggestions__impact-icon--positive {
+  color: #16a34a;
+}
+
+.ai-suggestions__impact-icon--negative {
+  color: #dc2626;
+}
+
+.ai-suggestions__timing {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--p-text-muted-color);
+}
+
+.ai-suggestions__timing .pi {
+  font-size: 0.72rem;
+  color: var(--brand-blue);
+}
+
+.ai-suggestions__reasons-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--brand-blue);
+  cursor: pointer;
+}
+
+.ai-suggestions__reasons-toggle .pi {
+  font-size: 0.65rem;
+}
+
 .ai-suggestions__message-lines {
   display: flex;
   flex-direction: column;
@@ -355,6 +435,32 @@ watch(
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Grow/shrink + fade for the reasons list as a whole (see the toggle
+   button in the template), via the CSS grid 0fr/1fr row-sizing trick -
+   animating to/from an intrinsic "auto" height isn't otherwise possible
+   without measuring in JS. The per-item stagger on each <li> still runs on
+   top of this every time it opens. */
+.ai-suggestions__reasons-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.ai-suggestions__reasons-enter-active,
+.ai-suggestions__reasons-leave-active {
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease;
+}
+
+.ai-suggestions__reasons-enter-from,
+.ai-suggestions__reasons-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.ai-suggestions__reasons-collapse > .ai-suggestions__message-lines {
+  overflow: hidden;
+  min-height: 0;
 }
 
 .ai-suggestions__message-line {
@@ -376,17 +482,11 @@ watch(
   background: var(--brand-blue);
 }
 
-.ai-suggestions__message-line strong {
-  color: var(--p-text-color);
-  font-weight: 700;
-}
-
-/* Each bullet (and the button after them) fades/slides in on its own,
-   staggered via an inline animation-delay - see the template - so the
-   explanation reads as arriving block by block rather than popping in at
-   once. */
-.ai-suggestions__message-line--fade-in,
-.ai-suggestions__message-action--fade-in.p-button {
+/* Each block (recommendation, impact chips, timing, each reason, and the
+   button after them) fades/slides in on its own, staggered via an inline
+   animation-delay - see the template - so the explanation reads as
+   arriving piece by piece rather than popping in at once. */
+.ai-suggestions__block--fade-in {
   opacity: 0;
   animation: ai-block-fade-in 0.35s ease forwards;
 }

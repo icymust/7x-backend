@@ -24,15 +24,50 @@ You explain exactly one selected workforce AI Suggestion.
 
 Use only the selected_action JSON provided by the user.
 Do not recalculate, change, infer or invent any value or decision.
-Output exactly four concise bullet points and no other text:
-- Recommendation: action type and courier count.
-- Evidence: state that predicted_orders_total is the total for the covered
-  shortage period and include covered_shortage_days. Then state that required
-  couriers, available couriers and shortage describe the peak_gap date.
-- Timing: shortage period and deadline.
-- Reason: human-friendly explanation of the backend reason and time horizon.
-Never mention another time horizon, another store, missing data or a plan summary.
-Keep the complete response under 120 words.
+Respond with a single JSON object and no other text (no markdown fences, no
+commentary before or after), matching exactly this shape:
+
+{{
+  "recommendation": "one clear, human-friendly sentence naming the action type and courier count",
+  "impact": [
+    {{"feature": "one or two plain words, e.g. 'Coverage' or 'Couriers' - never a raw JSON field name", "delta": "a short, self-contained, unambiguous phrase for an INCREASE, always starting with +, e.g. '+3 couriers added' or '+38% coverage' or '+5 couriers now available'", "positive": true}}
+  ],
+  "timing": "one human-friendly sentence - see the timing rule below for what it must cover",
+  "reasons": ["short standalone statement", "short standalone statement"]
+}}
+
+Rules:
+- "impact" must have 2 to 4 entries derived only from evidence.peak_gap
+  (required_couriers, available_couriers, shortage_before_action,
+  action_gap_couriers) and the evidence totals (predicted_orders_total,
+  baseline_orders_total, prediction_correction_total). Every entry must
+  describe something going UP as a result of the action - coverage
+  increasing, couriers/outsourced staff added, couriers now available.
+  "positive" is always true. Never report a metric as shrinking or
+  decreasing (e.g. never phrase the shortage as "-3 shortage remaining" or
+  similar) - if you want to reference the shortage closing, express it as
+  the increase that closes it instead (e.g. "+3 couriers added" covering
+  the gap), not as a negative number. Never use a raw field name like
+  "shortage_before_action" as "feature" - translate it to a short
+  plain-language label instead.
+- Each "impact" entry must be a genuinely distinct metric. Never include two
+  entries that restate the same underlying number in different words (e.g.
+  "+3 couriers added" and "+3 couriers now available" both just describe the
+  same headcount increase - keep only one of them). Prefer covering
+  different things instead: one about couriers/outsourced headcount, one
+  about coverage percent, one about orders, and so on.
+- "delta" is shown to the user on its own, with no separate label next to
+  it, so it must be unambiguous by itself and always start with "+".
+- "timing" must state deadline in every case. If action_type is
+  "permanent_hiring", state ONLY the deadline - do not mention
+  shortage_period.date_from or date_to for a hiring suggestion. For every
+  other action_type, state shortage_period.date_from and date_to as well as
+  the deadline.
+- "reasons" must have 1 to 3 short statements explaining the backend reason
+  and time_horizon in plain language.
+- Never mention another time horizon, another store, missing data or a plan
+  summary.
+- Keep the total text content under 150 words.
 Respond in {language}.
 """.strip()
 
@@ -45,10 +80,41 @@ def is_ollama_enabled() -> bool:
     return os.getenv("OLLAMA_ENABLED", "false").strip().lower() in ENABLED_VALUES
 
 
+def _parse_selected_action_message(raw: str) -> dict | None:
+    """Validates the selected-action JSON shape (recommendation/impact/timing/
+    reasons) so a non-compliant model response falls back to
+    structured_fallback instead of handing the frontend a malformed object."""
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    if not isinstance(parsed.get("recommendation"), str):
+        return None
+
+    if not isinstance(parsed.get("timing"), str):
+        return None
+
+    impact = parsed.get("impact")
+
+    if not isinstance(impact, list) or not all(isinstance(item, dict) for item in impact):
+        return None
+
+    reasons = parsed.get("reasons")
+
+    if not isinstance(reasons, list) or not all(isinstance(item, str) for item in reasons):
+        return None
+
+    return parsed
+
+
 def request_llm_explanation(
     context: dict,
     language: str,
-) -> str | None:
+) -> str | dict | None:
     if not is_ollama_enabled():
         return None
 
@@ -99,29 +165,37 @@ def request_llm_explanation(
             )
         )
 
+        request_body = {
+            "model": model,
+            "stream": False,
+            "think": False,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        llm_context,
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "options": {
+                "temperature": 0.2,
+            },
+        }
+
+        # Ollama's native structured-output mode - enforced only for the
+        # selected-action path, which now expects a JSON object back rather
+        # than the overview path's free-form prose.
+        if is_selected_action:
+            request_body["format"] = "json"
+
         response = httpx.post(
             f"{base_url}/api/chat",
-            json={
-                "model": model,
-                "stream": False,
-                "think": False,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            llm_context,
-                            ensure_ascii=False,
-                        ),
-                    },
-                ],
-                "options": {
-                    "temperature": 0.2,
-                },
-            },
+            json=request_body,
             timeout=timeout,
         )
 
@@ -133,7 +207,12 @@ def request_llm_explanation(
         if not isinstance(message, str) or not message.strip():
             return None
 
-        return message.strip()
+        message = message.strip()
+
+        if is_selected_action:
+            return _parse_selected_action_message(message)
+
+        return message
 
     except (
         httpx.HTTPError,

@@ -4,6 +4,7 @@ import {
   fetchLatestPlanRows,
   fetchStores,
   latestRowPerStore,
+  rowsByStore,
   type BackendPlanRow,
   type BackendStore,
 } from '../services/warehousesApi'
@@ -67,23 +68,38 @@ function mockAvgCourierKpi(storeId: string): number {
   return Math.round(78 + rand() * 17)
 }
 
-function courierLoadPercentFor(row: BackendPlanRow): number {
-  if (row.required_courier_hours != null && row.available_courier_hours != null) {
-    return row.available_courier_hours > 0
-      ? Math.round((row.required_courier_hours / row.available_courier_hours) * 100)
-      : 100
-  }
-  return row.available_couriers > 0
-    ? Math.round((row.required_couriers / row.available_couriers) * 100)
-    : 100
+// Sums required vs. available across every row for the store, rather than
+// reading one day's ratio - matches the window the backend's own /stores
+// status is aggregated over (_store_month_status sums the whole plan, not
+// one day), so a high load% and a "critical" status now describe the same
+// underlying numbers instead of two unrelated snapshots.
+function courierLoadPercentForRows(rows: BackendPlanRow[]): number {
+  if (rows.length === 0) return 0
+
+  const useHours = rows[0].required_courier_hours != null && rows[0].available_courier_hours != null
+
+  const totalRequired = rows.reduce(
+    (sum, row) => sum + (useHours ? (row.required_courier_hours ?? 0) : row.required_couriers),
+    0,
+  )
+  const totalAvailable = rows.reduce(
+    (sum, row) => sum + (useHours ? (row.available_courier_hours ?? 0) : row.available_couriers),
+    0,
+  )
+
+  return totalAvailable > 0 ? Math.round((totalRequired / totalAvailable) * 100) : 100
 }
 
 // `/stores` is the authoritative source for identity/coordinates/status;
-// `/planning-runs/{id}` plan rows are the only source for courier counts.
-// Merge them per store rather than picking one - each has data the other
-// doesn't.
-function toWarehouseFeature(store: BackendStore, latestRow: BackendPlanRow | undefined): Feature<Point, WarehouseProperties> {
-  const courierLoadPercent = latestRow ? courierLoadPercentFor(latestRow) : 0
+// `/planning-runs/{id}` plan rows are the only source for courier counts and
+// load. Merge them per store rather than picking one - each has data the
+// other doesn't.
+function toWarehouseFeature(
+  store: BackendStore,
+  storeRows: BackendPlanRow[],
+  latestRow: BackendPlanRow | undefined,
+): Feature<Point, WarehouseProperties> {
+  const courierLoadPercent = courierLoadPercentForRows(storeRows)
   // lat/lng are only null for a Planning Run created before the backend
   // started returning coordinates (see docs/ENDPOINTS.md "Warehouse map") -
   // falls back to [0, 0] for those, same as before.
@@ -160,8 +176,11 @@ export let mainBranchCoords: [number, number] = NETWORK_CENTER
 export async function loadWarehouses(): Promise<void> {
   const [stores, rows] = await Promise.all([fetchStores(), fetchLatestPlanRows()])
   const latestRowByStore = new Map(latestRowPerStore(rows).map((row) => [row.store_id, row]))
+  const rowsByStoreId = rowsByStore(rows)
 
-  warehouses.features = stores.map((store) => toWarehouseFeature(store, latestRowByStore.get(store.store_id)))
+  warehouses.features = stores.map((store) =>
+    toWarehouseFeature(store, rowsByStoreId.get(store.store_id) ?? [], latestRowByStore.get(store.store_id)),
+  )
 
   const mainFeature = warehouses.features[0]
   mainBranchWarehouse = mainFeature?.properties ?? EMPTY_WAREHOUSE

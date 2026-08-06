@@ -6,33 +6,18 @@ import Button from 'primevue/button'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
-import Chart from 'primevue/chart'
 import ProgressBar from 'primevue/progressbar'
 import Accordion from 'primevue/accordion'
 import AccordionPanel from 'primevue/accordionpanel'
 import AccordionHeader from 'primevue/accordionheader'
 import AccordionContent from 'primevue/accordioncontent'
-import Tabs from 'primevue/tabs'
-import TabList from 'primevue/tablist'
-import Tab from 'primevue/tab'
-import TabPanels from 'primevue/tabpanels'
-import TabPanel from 'primevue/tabpanel'
 import type { WarehouseProperties } from '../../data/warehouseData'
-import {
-  DRIVER_STATUS_COLOR,
-  DRIVER_STATUS_LABEL,
-  demandHistoryByWarehouse,
-  mainBranchWarehouse,
-  warehouses,
-} from '../../data/warehouseData'
-import { useTheme } from '../../composables/useTheme'
+import { DRIVER_STATUS_COLOR, DRIVER_STATUS_LABEL, mainBranchWarehouse, warehouses } from '../../data/warehouseData'
 import { useWarehouseSelection } from '../../composables/useWarehouseSelection'
 import DemandCalendar from './DemandCalendar.vue'
-import DemandHourlyChart from './DemandHourlyChart.vue'
 import WarehouseAiSuggestions from './WarehouseAiSuggestions.vue'
 import WarehouseManageActions from './WarehouseManageActions.vue'
 
-const { isDark } = useTheme()
 const { selectedWarehouse, showList, selectWarehouse, showWarehouseList } = useWarehouseSelection()
 const route = useRoute()
 
@@ -85,60 +70,6 @@ function selectFromList(feature: Feature<Point, WarehouseProperties>) {
 const active = computed(() => selectedWarehouse.value ?? mainBranchWarehouse)
 const isMainBranch = computed(() => active.value.name === mainBranchWarehouse.name)
 const healthColor = computed(() => DRIVER_STATUS_COLOR[active.value.driverStatus])
-
-const chartData = computed(() => {
-  const history = demandHistoryByWarehouse[active.value.name] ?? []
-  const lastActualIndex = history.findIndex((d) => d.projected) - 1
-  const lineColor = isDark.value ? '#4A7DFF' : '#0020F5'
-
-  return {
-    labels: history.map((d) => d.month),
-    datasets: [
-      {
-        label: 'Demand',
-        data: history.map((d) => (d.projected ? null : d.demand)),
-        borderColor: lineColor,
-        backgroundColor: isDark.value ? 'rgba(74, 125, 255, 0.18)' : 'rgba(0, 32, 245, 0.1)',
-        tension: 0.35,
-        fill: true,
-        pointRadius: 3,
-        borderWidth: 2.5,
-      },
-      {
-        label: 'Forecast',
-        data: history.map((d, i) => (i >= lastActualIndex ? d.demand : null)),
-        borderColor: lineColor,
-        borderDash: [6, 4],
-        backgroundColor: 'transparent',
-        tension: 0.35,
-        fill: false,
-        pointRadius: 3,
-        borderWidth: 2.5,
-      },
-    ],
-  }
-})
-
-const chartOptions = computed(() => {
-  const gridColor = isDark.value ? 'rgba(255,255,255,0.08)' : 'rgba(15,21,32,0.06)'
-  const textColor = isDark.value ? 'rgba(255,255,255,0.65)' : 'rgba(15,21,32,0.55)'
-  return {
-    maintainAspectRatio: false,
-    responsive: true,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        position: 'top',
-        align: 'end',
-        labels: { color: textColor, boxWidth: 8, usePointStyle: true, pointStyle: 'circle' },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: textColor } },
-      y: { grid: { color: gridColor }, ticks: { color: textColor } },
-    },
-  }
-})
 </script>
 
 <template>
@@ -276,26 +207,7 @@ const chartOptions = computed(() => {
           <AccordionPanel value="trend">
             <AccordionHeader>Demand Trend</AccordionHeader>
             <AccordionContent>
-              <Tabs value="monthly" class="warehouse-panel__tabs">
-                <TabList>
-                  <Tab value="monthly">Monthly</Tab>
-                  <Tab value="daily">Daily</Tab>
-                  <Tab value="hourly">Hourly</Tab>
-                </TabList>
-                <TabPanels>
-                  <TabPanel value="monthly">
-                    <div class="warehouse-panel__chart">
-                      <Chart type="line" :data="chartData" :options="chartOptions" />
-                    </div>
-                  </TabPanel>
-                  <TabPanel value="daily">
-                    <DemandCalendar :store-id="active.storeId" />
-                  </TabPanel>
-                  <TabPanel value="hourly">
-                    <DemandHourlyChart :warehouse-name="active.name" />
-                  </TabPanel>
-                </TabPanels>
-              </Tabs>
+              <DemandCalendar :store-id="active.storeId" />
             </AccordionContent>
           </AccordionPanel>
         </Accordion>
@@ -462,18 +374,6 @@ const chartOptions = computed(() => {
 
 .warehouse-panel__accordion {
   margin-top: 1.25rem;
-}
-
-.warehouse-panel__chart {
-  height: 13rem;
-}
-
-.warehouse-panel__tabs.p-tabs :deep(.p-tablist-tab-list) {
-  gap: 0.25rem;
-}
-
-.warehouse-panel__tabs.p-tabs :deep(.p-tabpanels) {
-  padding: 1rem 0 0;
 }
 
 .warehouse-list__search {

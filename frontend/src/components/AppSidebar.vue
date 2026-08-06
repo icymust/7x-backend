@@ -56,7 +56,7 @@ function selectItem(item: NavItem) {
           <path d="M14 14H34L25.5 24.5H34L20 36L23 25.5H16L14 14Z" fill="#4A7DFF" />
         </svg>
       </span>
-      <span v-if="!collapsed" class="sidebar__name">7x <span class="sidebar__name-accent">Workers Demand</span></span>
+      <span v-if="!collapsed" class="sidebar__name">Predicto</span>
     </div>
 
     <nav class="sidebar__nav">
@@ -157,11 +157,6 @@ function selectItem(item: NavItem) {
   color: #ffffff;
   letter-spacing: -0.01em;
   white-space: nowrap;
-}
-
-.sidebar__name-accent {
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.72);
 }
 
 .sidebar__nav {
